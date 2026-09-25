@@ -4,7 +4,6 @@
 // else touches IndexedDB directly.
 // ===========================================================
 import { db, getMeta, setMeta } from "./db.js";
-import { generateDemoData } from "../data/demo/demo-data.js";
 import { slugify } from "./calc.js";
 
 function nowIso() { return new Date().toISOString(); }
@@ -23,7 +22,7 @@ class StoreImpl {
       theme: "system",
       route: "dashboard",
       drill: { categoryId: null, projectCode: null },
-      usingDemoData: false,
+      planNotes: [],
     };
     this._listeners = new Set();
   }
@@ -41,13 +40,12 @@ class StoreImpl {
   }
 
   async loadAll() {
-    const [categories, projects, budgetLines, transactions, importBatches] = await Promise.all([
-      db.getAll("categories"), db.getAll("projects"), db.getAll("budgetLines"), db.getAll("transactions"), db.getAll("importBatches"),
+    const [categories, projects, budgetLines, transactions, importBatches, planNotes] = await Promise.all([
+      db.getAll("categories"), db.getAll("projects"), db.getAll("budgetLines"), db.getAll("transactions"), db.getAll("importBatches"), db.getAll("planNotes"),
     ]);
     const savedFy = await getMeta("fiscalYear", null);
     const savedAsOf = await getMeta("asOfMonth", null);
     const theme = await getMeta("theme", "system");
-    const usingDemoData = await getMeta("usingDemoData", false);
 
     let fiscalYear = savedFy;
     if (!fiscalYear) {
@@ -55,9 +53,9 @@ class StoreImpl {
       fiscalYear = years.size ? Math.max(...years) : new Date().getFullYear();
     }
     this.setState({
-      categories, projects, budgetLines, transactions, importBatches,
+      categories, projects, budgetLines, transactions, importBatches, planNotes,
       fiscalYear, asOfMonth: savedAsOf || new Date().getMonth() + 1,
-      theme, usingDemoData, ready: true,
+      theme, ready: true,
     });
     this._applyTheme();
   }
@@ -101,16 +99,17 @@ class StoreImpl {
   }
   async deleteProject(code) {
     await db.delete("projects", code);
-    await db.deleteByIndex("budgetLines", "byFyProject", undefined).catch(() => {});
     const budgetLines = this.state.budgetLines.filter((b) => b.projectCode !== code);
     for (const b of this.state.budgetLines.filter((b) => b.projectCode === code)) await db.delete("budgetLines", b.id);
-    this.setState({ projects: this.state.projects.filter((p) => p.code !== code), budgetLines });
+    const planNotes = this.state.planNotes.filter((n) => n.projectCode !== code);
+    for (const n of this.state.planNotes.filter((n) => n.projectCode === code)) await db.delete("planNotes", n.id);
+    this.setState({ projects: this.state.projects.filter((p) => p.code !== code), budgetLines, planNotes });
   }
 
   // ---------- budget lines ----------
   async setBudgetAmount(fiscalYear, projectCode, month, amount) {
     const id = `${fiscalYear}:${projectCode}:${month}`;
-    const record = { id, fiscalYear, projectCode, month, amount: Number(amount) || 0, notes: "", updatedAt: nowIso() };
+    const record = { id, fiscalYear, projectCode, month, amount: Number(amount) || 0, updatedAt: nowIso() };
     await db.put("budgetLines", record);
     const budgetLines = [...this.state.budgetLines.filter((b) => b.id !== id), record];
     this.setState({ budgetLines });
@@ -143,28 +142,23 @@ class StoreImpl {
     this.setState({ transactions: [], importBatches: [] });
   }
 
-  // ---------- demo data ----------
-  async loadDemoData() {
-    await db.wipeAll();
-    const demo = generateDemoData({ fiscalYear: new Date().getFullYear() >= 2026 ? new Date().getFullYear() : 2026, asOfMonth: 9 });
-    await db.bulkPut("categories", demo.categories);
-    await db.bulkPut("projects", demo.projects);
-    await db.bulkPut("budgetLines", demo.budgetLines);
-    await db.bulkPut("transactions", demo.transactions);
-    await setMeta("usingDemoData", true);
-    await setMeta("fiscalYear", demo.fiscalYear);
-    await setMeta("asOfMonth", demo.asOfMonth);
-    this.setState({
-      categories: demo.categories, projects: demo.projects, budgetLines: demo.budgetLines,
-      transactions: demo.transactions, importBatches: [], usingDemoData: true,
-      fiscalYear: demo.fiscalYear, asOfMonth: demo.asOfMonth,
-    });
+  // ---------- plan notes (one per cost item per fiscal year) ----------
+  async setPlanNote(fiscalYear, projectCode, text) {
+    const id = `${fiscalYear}:${projectCode}`;
+    const trimmed = (text || "").trim();
+    if (!trimmed) {
+      await db.delete("planNotes", id);
+      this.setState({ planNotes: this.state.planNotes.filter((n) => n.id !== id) });
+      return;
+    }
+    const record = { id, fiscalYear, projectCode, text: trimmed, updatedAt: nowIso() };
+    await db.put("planNotes", record);
+    this.setState({ planNotes: [...this.state.planNotes.filter((n) => n.id !== id), record] });
   }
 
   async wipeAll() {
     await db.wipeAll();
-    await setMeta("usingDemoData", false);
-    this.setState({ categories: [], projects: [], budgetLines: [], transactions: [], importBatches: [], usingDemoData: false });
+    this.setState({ categories: [], projects: [], budgetLines: [], transactions: [], importBatches: [], planNotes: [] });
   }
 
   async importWorkbookData(parsed) {
@@ -173,10 +167,10 @@ class StoreImpl {
     await db.bulkPut("projects", parsed.projects);
     await db.bulkPut("budgetLines", parsed.budgetLines);
     if (parsed.transactions?.length) await db.bulkPut("transactions", parsed.transactions);
-    await setMeta("usingDemoData", false);
+    if (parsed.planNotes?.length) await db.bulkPut("planNotes", parsed.planNotes);
     this.setState({
       categories: parsed.categories, projects: parsed.projects, budgetLines: parsed.budgetLines,
-      transactions: parsed.transactions || [], usingDemoData: false,
+      transactions: parsed.transactions || [], planNotes: parsed.planNotes || [],
     });
   }
 }

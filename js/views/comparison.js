@@ -28,18 +28,18 @@ export function render(root) {
   root.innerHTML = `
     <div class="view-head">
       <h1>Budget vs. Actual</h1>
-      <p class="lead">Committed = actual spend + open encumbrances. Balance = FY${fy} budget minus committed. Click a category to expand, or a project row to drill into its transactions.</p>
+      <p class="lead">Committed = actual spend + open encumbrances. Balance = FY${fy} budget minus committed. Click a cost item group to expand, or a cost item row to drill into its transactions.</p>
     </div>
 
     <div class="filter-bar">
       <div class="field grow">
-        <label>Search project or code</label>
+        <label>Search cost item or code</label>
         <input type="search" id="cmp-search" placeholder="e.g. Advertising, ADV-100…" value="${escapeHtml(search)}" />
       </div>
       <div class="field">
-        <label>Category</label>
+        <label>Cost item group</label>
         <select id="cmp-category">
-          <option value="">All categories</option>
+          <option value="">All cost item groups</option>
           ${s.categories.map((c) => `<option value="${c.id}" ${categoryFilter === c.id ? "selected" : ""}>${c.name}</option>`).join("")}
         </select>
       </div>
@@ -54,7 +54,7 @@ export function render(root) {
       <table class="data-table" id="cmp-table">
         <thead>
           <tr>
-            <th>Category / Project</th>
+            <th>Cost Item Group / Cost Item</th>
             <th>Budget</th>
             <th>Actual</th>
             <th>Encumbered</th>
@@ -133,7 +133,7 @@ function exportCsv(rows, fy) {
     lines.push([cat.name, cat.budget, cat.actual, cat.encumbrance, cat.committed, cat.balance]);
     for (const p of cat.projects) lines.push([`  ${p.name} (${p.code})`, p.budget, p.actual, p.encumbrance, p.committed, p.balance]);
   }
-  const csv = toCsv(["Category / Project", "Budget", "Actual", "Encumbered", "Committed", "Balance"], lines);
+  const csv = toCsv(["Cost Item Group / Cost Item", "Budget", "Actual", "Encumbered", "Committed", "Balance"], lines);
   downloadTextFile(`budget-vs-actual-FY${fy}.csv`, csv);
 }
 

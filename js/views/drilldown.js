@@ -30,8 +30,8 @@ function renderCategoryPicker(root, s) {
   const actualsByProject = aggregateActuals(s.transactions, fy);
   const budgetMap = budgetByProject(s.budgetLines, fy);
   root.innerHTML = `
-    <div class="view-head"><h1>Drill-Down</h1><p class="lead">Pick a category to explore its projects, then a project to see every underlying transaction.</p></div>
-    ${crumbs([{ label: "All categories" }])}
+    <div class="view-head"><h1>Drill-Down</h1><p class="lead">Pick a cost item group to explore its cost items, then a cost item to see every underlying transaction.</p></div>
+    ${crumbs([{ label: "All cost item groups" }])}
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">
       ${s.categories.map((c) => {
         const projs = s.projects.filter((p) => p.categoryId === c.id);
@@ -39,7 +39,7 @@ function renderCategoryPicker(root, s) {
         const actual = projs.reduce((sum, p) => sum + (actualsByProject.get(p.code)?.actual || 0), 0);
         return `<div class="card" data-cat="${c.id}" style="cursor:pointer">
           <div style="font-weight:700;font-size:14px;margin-bottom:6px">${c.name}</div>
-          <div class="hint">${projs.length} project${projs.length === 1 ? "" : "s"}</div>
+          <div class="hint">${projs.length} cost item${projs.length === 1 ? "" : "s"}</div>
           <div style="margin-top:10px;font-size:13px">$${fmtMoney(actual, { compact: true })} <span class="hint">actual of</span> $${fmtMoney(budget, { compact: true })}</div>
         </div>`;
       }).join("")}
@@ -56,11 +56,11 @@ function renderCategory(root, s, categoryId) {
   const budgetMap = budgetByProject(s.budgetLines, fy);
 
   root.innerHTML = `
-    <div class="view-head"><h1>${cat ? cat.name : "Category"}</h1></div>
-    ${crumbs([{ label: "All categories", action: "root" }, { label: cat ? cat.name : "" }])}
+    <div class="view-head"><h1>${cat ? cat.name : "Cost Item Group"}</h1></div>
+    ${crumbs([{ label: "All cost item groups", action: "root" }, { label: cat ? cat.name : "" }])}
     <div class="table-scroll">
       <table class="data-table">
-        <thead><tr><th>Project</th><th>Budget</th><th>Actual</th><th>Encumbered</th><th>Balance</th><th>Status</th></tr></thead>
+        <thead><tr><th>Cost Item</th><th>Budget</th><th>Actual</th><th>Encumbered</th><th>Balance</th><th>Status</th></tr></thead>
         <tbody>
           ${projects.map((p) => {
             const a = actualsByProject.get(p.code) || { actual: 0, encumbrance: 0, actualByMonth: Array(12).fill(0), encumbranceByMonth: Array(12).fill(0) };
@@ -114,8 +114,8 @@ function renderProject(root, s, categoryId, projectCode) {
   const pageRows = txs.slice((txPage - 1) * PAGE_SIZE, txPage * PAGE_SIZE);
 
   root.innerHTML = `
-    <div class="view-head"><h1>${proj ? proj.name : "Project"} <span class="badge-soft">${projectCode}</span></h1></div>
-    ${crumbs([{ label: "All categories", action: "root" }, { label: cat ? cat.name : "", action: "cat" }, { label: proj ? proj.name : "" }])}
+    <div class="view-head"><h1>${proj ? proj.name : "Cost Item"} <span class="badge-soft">${projectCode}</span></h1></div>
+    ${crumbs([{ label: "All cost item groups", action: "root" }, { label: cat ? cat.name : "", action: "cat" }, { label: proj ? proj.name : "" }])}
 
     <div class="grid kpi-row">
       ${kpiCard({ label: `FY${fy} budget`, value: "$" + fmtMoney(b.total, { compact: true }), icon: "layers", iconColor: "var(--series-1)" })}

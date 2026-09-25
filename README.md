@@ -12,22 +12,34 @@ SheetJS are vendored in `vendor/` rather than loaded from a CDN.
 
 - **Dashboard** — portfolio KPIs (budget, actual, encumbered, balance,
   projected year-end spend), a cumulative spend-vs-budget-pace chart, and a
-  "categories to watch" list ranked by projected variance.
-- **Budget vs. Actual** — an expandable category → project table with
-  budget/actual/encumbered/committed/balance and a status chip per line,
-  search, filter and CSV export.
-- **Run Rate & Forecast** — for the whole portfolio or any single project:
+  "cost item groups to watch" list ranked by projected variance.
+- **Budget vs. Actual** — an expandable cost item group → cost item table
+  with budget/actual/encumbered/committed/balance and a status chip per
+  line, search, filter and CSV export.
+- **Run Rate & Forecast** — for the whole portfolio or any single cost item:
   projected year-end spend = year-to-date actual + (average monthly actual ×
   remaining months), compared to budget, with a status of On track / Watch /
   At risk / Over budget.
-- **Drill-Down** — category → project → every underlying transaction, with
-  search, vendor/type filters, sorting, pagination and CSV export.
+- **Drill-Down** — cost item group → cost item → every underlying
+  transaction (invoice, purchase order, credit memo, journal entry — see
+  "Document type" below), with search, vendor/type filters, sorting,
+  pagination and CSV export.
 - **Planning** — an editable budget-input grid (monthly or quarterly) per
-  project, with add/remove categories and projects, and a "copy from another
-  fiscal year" helper.
+  cost item, with add/remove cost item groups and cost items, a note field
+  per cost item per fiscal year, and a "copy from another fiscal year"
+  helper.
 - **Data & Settings** — import actuals, import a budget template, export/
-  import a shareable workbook, manage categories/projects, and see exactly
-  what's stored and where (see below).
+  import a shareable workbook, manage cost item groups/cost items, and see
+  exactly what's stored and where (see below).
+
+### Document type (invoices, POs, credit memos, journal entries)
+
+Every transaction in Drill-Down carries a **Document type** — classified
+from your GL export's document code into a plain label (Invoice, Purchase
+Order, Credit Memo, Journal Entry, …) via `friendlyDocType()` in `calc.js`.
+Filter by it alongside vendor and actual/encumbered basis, so you can see,
+for example, just the open purchase orders against a cost item, or just its
+posted invoices.
 
 ## Do you need a database?
 
@@ -40,7 +52,7 @@ or maintaining the numbers.
 
 **For a team, the shared file *is* the database.** Go to
 **Data & Settings → Share workbook → Export workbook** to download a single
-`.xlsx` with your categories, projects and budget plan (optionally with full
+`.xlsx` with your cost item groups, cost items and budget plan (optionally with full
 transaction detail too). Save that file into a shared drive folder — Google
 Drive, OneDrive, SharePoint, whatever your team already uses. Everyone else
 opens BudgetBridge in their own browser and uses **Import workbook** to pull
@@ -74,21 +86,21 @@ in place instead of duplicating.
 
 ## Getting a shared copy running
 
-1. Open `index.html` once yourself and click **Load sample data** to see the
-   tool with a fabricated demo dataset (nothing here is real financial data —
-   see "About the sample data" below).
-2. Go to **Data & Settings → Import actuals** and drop your GL/ERP export.
+1. Go to **Data & Settings → Import actuals** and drop your GL/ERP export.
    Recognized column headers (`Gl Accounts`, `Accounted Net`, `Gl Period`,
    etc. — the shape of a typical Oracle/JDE-style GL extract) import
    automatically. Anything else opens a one-time column-mapping step, so a
    differently-shaped export still works.
-3. Set up your categories and projects in **Data & Settings → Categories &
-   projects** (or import an existing quarter/category budget template from
-   **Import actuals → Budget planning template**), then enter numbers in
-   **Planning**.
-4. Export a workbook (**Data & Settings → Share workbook**) and put it in a
+2. Set up your cost item groups and cost items in **Data & Settings →
+   Cost item groups & cost items** (or import an existing quarter/category
+   budget template from **Import actuals → Budget planning template**),
+   then enter numbers in **Planning**.
+3. Export a workbook (**Data & Settings → Share workbook**) and put it in a
    shared drive folder. Send the folder's `index.html` + workbook location to
    your team, or host the app (see below) and just share the workbook.
+
+There is no sample or demo data anywhere in this build — the app starts
+empty and only ever shows what you import.
 
 ### Running it for real use
 
@@ -156,18 +168,8 @@ js/
   charts.js                Chart.js styling helpers
   ui.js                     Toasts, modals, small DOM helpers
   views/                    One module per screen (dashboard, comparison, …)
-data/demo/demo-data.js  Synthetic sample dataset generator
 vendor/                 Chart.js + SheetJS (xlsx), vendored for offline use
 ```
-
-## About the sample data
-
-The category names (Advertising, Sponsorships, Events, etc.) are generic and
-common to most marketing/corp-comm budgets, but every number, vendor name and
-transaction in the "Load sample data" dataset is fabricated by a seeded
-generator (`data/demo/demo-data.js`) — none of it is real. Use it to explore
-the UI, then clear it (**Data & Settings → Storage & danger zone → Erase
-everything**) before loading your real figures.
 
 ## Browser support
 

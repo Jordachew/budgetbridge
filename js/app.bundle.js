@@ -7,7 +7,7 @@
 
   // js/db.js
   var DB_NAME = "budgetbridge";
-  var DB_VERSION = 1;
+  var DB_VERSION = 2;
   var _db = null;
   function openDb() {
     if (_db) return Promise.resolve(_db);
@@ -37,6 +37,10 @@
         }
         if (!db2.objectStoreNames.contains("importBatches")) {
           db2.createObjectStore("importBatches", { keyPath: "id" });
+        }
+        if (!db2.objectStoreNames.contains("planNotes")) {
+          const s = db2.createObjectStore("planNotes", { keyPath: "id" });
+          s.createIndex("byFyProject", ["fiscalYear", "projectCode"], { unique: false });
         }
       };
       req.onsuccess = () => {
@@ -105,7 +109,7 @@
       }));
     },
     async wipeAll() {
-      return tx(["meta", "categories", "projects", "budgetLines", "transactions", "importBatches"], "readwrite", (s) => {
+      return tx(["meta", "categories", "projects", "budgetLines", "transactions", "importBatches", "planNotes"], "readwrite", (s) => {
         for (const n of Object.keys(s)) s[n].clear();
       });
     }
@@ -126,165 +130,6 @@
       }
     }
     return null;
-  }
-
-  // data/demo/demo-data.js
-  function mulberry32(seed) {
-    let a = seed;
-    return function() {
-      a |= 0;
-      a = a + 1831565813 | 0;
-      let t = Math.imul(a ^ a >>> 15, 1 | a);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  }
-  var CATEGORY_DEFS = [
-    { id: "advertising-media", name: "Advertising & Media Placement", projects: [
-      { code: "ADV-100", name: "Advertising Production & Placement", annual: 14e6 },
-      { code: "ADV-110", name: "Digital & Social Media Boosting", annual: 42e5 }
-    ] },
-    { id: "third-party", name: "Third-Party Production Services", projects: [
-      { code: "TPS-200", name: "Third Party Services", annual: 95e5 },
-      { code: "TPS-210", name: "Agency & Facilitator Support", annual: 36e5 }
-    ] },
-    { id: "photo-video", name: "Photography & Videography", projects: [
-      { code: "PHV-300", name: "Photography & Videography", annual: 51e5 }
-    ] },
-    { id: "sponsorships", name: "Sponsorships & Partnerships", projects: [
-      { code: "SPN-400", name: "Strategic Partnerships & Sponsorships", annual: 8e6 },
-      { code: "SPN-410", name: "Industry Association Memberships", annual: 12e5 }
-    ] },
-    { id: "events", name: "Corporate & Community Events", projects: [
-      { code: "EVT-500", name: "Sponsored Community Events", annual: 64e5 },
-      { code: "EVT-510", name: "Internal Corporate Events", annual: 21e5 }
-    ] },
-    { id: "brand-campaigns", name: "Brand Campaigns", projects: [
-      { code: "BRC-600", name: "Corporate Brand Campaign", annual: 1e7 }
-    ] },
-    { id: "customer-education", name: "Customer Education & Engagement", projects: [
-      { code: "CED-700", name: "Customer Education Content", annual: 38e5 },
-      { code: "CED-710", name: "Brochures & Field Collateral", annual: 14e5 }
-    ] },
-    { id: "media-relations", name: "Media Relations & Briefings", projects: [
-      { code: "MED-800", name: "Media Briefings", annual: 16e5 }
-    ] },
-    { id: "training", name: "Training & Team Engagement", projects: [
-      { code: "TRN-900", name: "Training & Development", annual: 28e5 },
-      { code: "TRN-910", name: "Team Engagement Activities", annual: 11e5 }
-    ] },
-    { id: "digital-content", name: "Digital & Content Production", projects: [
-      { code: "DIG-1000", name: "Website & Digital Content", annual: 26e5 }
-    ] }
-  ];
-  var VENDORS = [
-    "Northshore Media Group",
-    "Bluewave Productions",
-    "Stratus Advertising Co.",
-    "Coral Bay Studios",
-    "Meridian Print & Design",
-    "Harborlight Films",
-    "Signal Tree Agency",
-    "Fieldstone Creative",
-    "Panorama Events Ltd.",
-    "Lighthouse PR Partners",
-    "Oakmoor Productions",
-    "Cedarline Graphics"
-  ];
-  var DESCRIPTIONS = [
-    "Monthly retainer",
-    "Production services",
-    "Media placement \u2014 radio",
-    "Media placement \u2014 TV",
-    "Print production run",
-    "Event logistics support",
-    "Content shoot & editing",
-    "Sponsorship activation",
-    "Design & artwork",
-    "Talent & facilitation fees",
-    "Venue & rentals",
-    "Digital ad boosting"
-  ];
-  function seasonalWeight(month) {
-    const weights = [0.8, 0.85, 0.95, 0.9, 0.95, 1, 0.95, 1, 1.05, 1.1, 1.2, 1.3];
-    return weights[month - 1];
-  }
-  function generateDemoData({ fiscalYear = 2026, asOfMonth = 9 } = {}) {
-    const rng = mulberry32(20260101);
-    const categories = CATEGORY_DEFS.map((c, i) => ({ id: c.id, name: c.name, sortOrder: i }));
-    const projects = [];
-    const budgetLines = [];
-    const transactions = [];
-    let txSeq = 0;
-    for (const cat of CATEGORY_DEFS) {
-      for (const p of cat.projects) {
-        projects.push({ code: p.code, name: p.name, categoryId: cat.id, active: true });
-        const weights = Array.from({ length: 12 }, (_, m) => seasonalWeight(m + 1));
-        const weightSum = weights.reduce((a, b) => a + b, 0);
-        for (let m = 1; m <= 12; m++) {
-          const amount = Math.round(p.annual * weights[m - 1] / weightSum);
-          budgetLines.push({ id: `${fiscalYear}:${p.code}:${m}`, fiscalYear, projectCode: p.code, month: m, amount, notes: "" });
-        }
-        const nextYear = fiscalYear + 1;
-        const growth = 1 + (rng() * 0.16 - 0.03);
-        const nextAnnual = Math.round(p.annual * growth);
-        const q1Amount = Math.round(nextAnnual * 0.25);
-        for (let m = 1; m <= 3; m++) {
-          budgetLines.push({ id: `${nextYear}:${p.code}:${m}`, fiscalYear: nextYear, projectCode: p.code, month: m, amount: Math.round(q1Amount / 3), notes: "" });
-        }
-        const monthlyTarget = p.annual / 12;
-        for (let m = 1; m <= asOfMonth; m++) {
-          const pace = 0.85 + rng() * 0.35;
-          const monthActualTotal = monthlyTarget * seasonalWeight(m) * pace * (12 / weights.reduce((a, b) => a + b, 0) * weightSum / 12);
-          const lineCount = 2 + Math.floor(rng() * 4);
-          let remaining = monthActualTotal;
-          for (let li = 0; li < lineCount; li++) {
-            const isLast = li === lineCount - 1;
-            const amount = isLast ? remaining : remaining * (0.2 + rng() * 0.4);
-            remaining -= amount;
-            txSeq++;
-            const roll = rng();
-            const docType = roll > 0.93 ? "GL_JRNL_MAN" : roll > 0.88 ? "AP_INV_CDTINV" : "AP_INV_STDINV";
-            const docPrefix = docType === "GL_JRNL_MAN" ? "JE" : docType === "AP_INV_CDTINV" ? "CM" : "INV";
-            transactions.push({
-              id: `demo-${p.code}-${fiscalYear}-${m}-${li}`,
-              project: p.code,
-              ferc: null,
-              year: fiscalYear,
-              month: m,
-              balanceType: "A",
-              docType,
-              docNo: `${docPrefix}-${String(txSeq).padStart(5, "0")}`,
-              desc: DESCRIPTIONS[Math.floor(rng() * DESCRIPTIONS.length)],
-              vendor: VENDORS[Math.floor(rng() * VENDORS.length)],
-              amount: Math.round(Math.max(amount, 0) * 100) / 100,
-              postedDate: `${fiscalYear}-${String(m).padStart(2, "0")}-${String(5 + Math.floor(rng() * 20)).padStart(2, "0")}`,
-              batchId: "demo-seed"
-            });
-          }
-          if (rng() > 0.6) {
-            txSeq++;
-            const encAmount = monthlyTarget * (0.05 + rng() * 0.2);
-            transactions.push({
-              id: `demo-${p.code}-${fiscalYear}-${m}-enc`,
-              project: p.code,
-              ferc: null,
-              year: fiscalYear,
-              month: m,
-              balanceType: "E",
-              docType: "PO_PO_STD",
-              docNo: `PO-${String(txSeq).padStart(5, "0")}`,
-              desc: "Open purchase order",
-              vendor: VENDORS[Math.floor(rng() * VENDORS.length)],
-              amount: Math.round(encAmount * 100) / 100,
-              postedDate: `${fiscalYear}-${String(m).padStart(2, "0")}-15`,
-              batchId: "demo-seed"
-            });
-          }
-        }
-      }
-    }
-    return { categories, projects, budgetLines, transactions, fiscalYear, asOfMonth };
   }
 
   // js/calc.js
@@ -503,7 +348,7 @@
         theme: "system",
         route: "dashboard",
         drill: { categoryId: null, projectCode: null },
-        usingDemoData: false
+        planNotes: []
       };
       this._listeners = /* @__PURE__ */ new Set();
     }
@@ -526,17 +371,17 @@
       return [...years].sort((a, b) => a - b);
     }
     async loadAll() {
-      const [categories, projects, budgetLines, transactions, importBatches] = await Promise.all([
+      const [categories, projects, budgetLines, transactions, importBatches, planNotes] = await Promise.all([
         db.getAll("categories"),
         db.getAll("projects"),
         db.getAll("budgetLines"),
         db.getAll("transactions"),
-        db.getAll("importBatches")
+        db.getAll("importBatches"),
+        db.getAll("planNotes")
       ]);
       const savedFy = await getMeta("fiscalYear", null);
       const savedAsOf = await getMeta("asOfMonth", null);
       const theme = await getMeta("theme", "system");
-      const usingDemoData = await getMeta("usingDemoData", false);
       let fiscalYear = savedFy;
       if (!fiscalYear) {
         const years = /* @__PURE__ */ new Set([...budgetLines.map((b) => b.fiscalYear), ...transactions.map((t) => t.year)]);
@@ -548,10 +393,10 @@
         budgetLines,
         transactions,
         importBatches,
+        planNotes,
         fiscalYear,
         asOfMonth: savedAsOf || (/* @__PURE__ */ new Date()).getMonth() + 1,
         theme,
-        usingDemoData,
         ready: true
       });
       this._applyTheme();
@@ -604,16 +449,16 @@
     }
     async deleteProject(code) {
       await db.delete("projects", code);
-      await db.deleteByIndex("budgetLines", "byFyProject", void 0).catch(() => {
-      });
       const budgetLines = this.state.budgetLines.filter((b) => b.projectCode !== code);
       for (const b of this.state.budgetLines.filter((b2) => b2.projectCode === code)) await db.delete("budgetLines", b.id);
-      this.setState({ projects: this.state.projects.filter((p) => p.code !== code), budgetLines });
+      const planNotes = this.state.planNotes.filter((n) => n.projectCode !== code);
+      for (const n of this.state.planNotes.filter((n2) => n2.projectCode === code)) await db.delete("planNotes", n.id);
+      this.setState({ projects: this.state.projects.filter((p) => p.code !== code), budgetLines, planNotes });
     }
     // ---------- budget lines ----------
     async setBudgetAmount(fiscalYear, projectCode, month, amount) {
       const id = `${fiscalYear}:${projectCode}:${month}`;
-      const record = { id, fiscalYear, projectCode, month, amount: Number(amount) || 0, notes: "", updatedAt: nowIso() };
+      const record = { id, fiscalYear, projectCode, month, amount: Number(amount) || 0, updatedAt: nowIso() };
       await db.put("budgetLines", record);
       const budgetLines = [...this.state.budgetLines.filter((b) => b.id !== id), record];
       this.setState({ budgetLines });
@@ -641,47 +486,37 @@
       await db.clear("importBatches");
       this.setState({ transactions: [], importBatches: [] });
     }
-    // ---------- demo data ----------
-    async loadDemoData() {
-      await db.wipeAll();
-      const demo = generateDemoData({ fiscalYear: (/* @__PURE__ */ new Date()).getFullYear() >= 2026 ? (/* @__PURE__ */ new Date()).getFullYear() : 2026, asOfMonth: 9 });
-      await db.bulkPut("categories", demo.categories);
-      await db.bulkPut("projects", demo.projects);
-      await db.bulkPut("budgetLines", demo.budgetLines);
-      await db.bulkPut("transactions", demo.transactions);
-      await setMeta("usingDemoData", true);
-      await setMeta("fiscalYear", demo.fiscalYear);
-      await setMeta("asOfMonth", demo.asOfMonth);
-      this.setState({
-        categories: demo.categories,
-        projects: demo.projects,
-        budgetLines: demo.budgetLines,
-        transactions: demo.transactions,
-        importBatches: [],
-        usingDemoData: true,
-        fiscalYear: demo.fiscalYear,
-        asOfMonth: demo.asOfMonth
-      });
+    // ---------- plan notes (one per cost item per fiscal year) ----------
+    async setPlanNote(fiscalYear, projectCode, text) {
+      const id = `${fiscalYear}:${projectCode}`;
+      const trimmed = (text || "").trim();
+      if (!trimmed) {
+        await db.delete("planNotes", id);
+        this.setState({ planNotes: this.state.planNotes.filter((n) => n.id !== id) });
+        return;
+      }
+      const record = { id, fiscalYear, projectCode, text: trimmed, updatedAt: nowIso() };
+      await db.put("planNotes", record);
+      this.setState({ planNotes: [...this.state.planNotes.filter((n) => n.id !== id), record] });
     }
     async wipeAll() {
       await db.wipeAll();
-      await setMeta("usingDemoData", false);
-      this.setState({ categories: [], projects: [], budgetLines: [], transactions: [], importBatches: [], usingDemoData: false });
+      this.setState({ categories: [], projects: [], budgetLines: [], transactions: [], importBatches: [], planNotes: [] });
     }
     async importWorkbookData(parsed) {
-      var _a;
+      var _a, _b;
       await db.wipeAll();
       await db.bulkPut("categories", parsed.categories);
       await db.bulkPut("projects", parsed.projects);
       await db.bulkPut("budgetLines", parsed.budgetLines);
       if ((_a = parsed.transactions) == null ? void 0 : _a.length) await db.bulkPut("transactions", parsed.transactions);
-      await setMeta("usingDemoData", false);
+      if ((_b = parsed.planNotes) == null ? void 0 : _b.length) await db.bulkPut("planNotes", parsed.planNotes);
       this.setState({
         categories: parsed.categories,
         projects: parsed.projects,
         budgetLines: parsed.budgetLines,
         transactions: parsed.transactions || [],
-        usingDemoData: false
+        planNotes: parsed.planNotes || []
       });
     }
   };
@@ -712,7 +547,8 @@
     inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-7l3.5-7Z"/>',
     upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
     download: '<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 19h16"/>',
-    layers: '<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>'
+    layers: '<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>',
+    note: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>'
   };
   function icon(name, { size = 18, strokeWidth = 2 } = {}) {
     const body = ICONS[name] || ICONS.chart;
@@ -1024,7 +860,7 @@
 
   // js/views/dashboard.js
   function render(root) {
-    var _a, _b;
+    var _a;
     const s = Store.state;
     const fy = s.fiscalYear, asOf = s.asOfMonth;
     const actualsByProject = aggregateActuals(s.transactions, fy);
@@ -1033,11 +869,7 @@
     const total = grandTotal(rows);
     if (!s.categories.length) {
       root.innerHTML = emptyState();
-      (_a = root.querySelector("#load-demo-btn")) == null ? void 0 : _a.addEventListener("click", async () => {
-        await Store.loadDemoData();
-        render(root);
-      });
-      (_b = root.querySelector("#go-data-btn")) == null ? void 0 : _b.addEventListener("click", () => Store.setRoute("data"));
+      (_a = root.querySelector("#go-data-btn")) == null ? void 0 : _a.addEventListener("click", () => Store.setRoute("data"));
       return;
     }
     const rr = computePortfolioRunRate(rows);
@@ -1077,7 +909,7 @@
       </div>
       <div class="card chart-card">
         <div class="chart-head">
-          <div><h3>Categories to watch</h3><div class="chart-cap">Ranked by projected year-end variance</div></div>
+          <div><h3>Cost item groups to watch</h3><div class="chart-cap">Ranked by projected year-end variance</div></div>
         </div>
         ${watchList(rows)}
       </div>
@@ -1085,7 +917,7 @@
 
     <div class="card chart-card" style="margin-top:14px">
       <div class="chart-head">
-        <div><h3>Budget vs. actual vs. encumbered, by category</h3><div class="chart-cap">FY${fy} full-year budget compared to spend to date</div></div>
+        <div><h3>Budget vs. actual vs. encumbered, by cost item group</h3><div class="chart-cap">FY${fy} full-year budget compared to spend to date</div></div>
         <button class="table-toggle" data-action="goto-comparison">View as table \u2192</button>
       </div>
       <div class="chart-wrap" style="height:320px"><canvas id="chart-category"></canvas></div>
@@ -1160,10 +992,9 @@
   <div class="card empty-state">
     <div class="big-ic">${icon("dashboard", { size: 44, strokeWidth: 1.6 })}</div>
     <h3>No data yet</h3>
-    ${hasOrphanTransactions ? `<p>${s.transactions.length.toLocaleString()} transaction line(s) are imported, but there are no categories or projects to group them under yet. Add matching project codes in <b>Data &amp; Settings \u2192 Categories &amp; projects</b> (or import a budget template) so they show up here.</p>` : `<p>Load the sample dataset to explore the tool, or head to <b>Data &amp; Settings</b> to import your own budget and actuals.</p>`}
+    ${hasOrphanTransactions ? `<p>${s.transactions.length.toLocaleString()} transaction line(s) are imported, but there are no cost item groups or cost items to group them under yet. Add matching cost item codes in <b>Data &amp; Settings \u2192 Cost Item Groups &amp; Cost Items</b> (or import a budget template) so they show up here.</p>` : `<p>Head to <b>Data &amp; Settings</b> to import your budget and actuals.</p>`}
     <div class="field-row" style="justify-content:center;margin-top:14px">
-      <button class="btn btn-primary" id="load-demo-btn">Load sample data</button>
-      <button class="btn" id="go-data-btn">Go to Data &amp; Settings</button>
+      <button class="btn btn-primary" id="go-data-btn">Go to Data &amp; Settings</button>
     </div>
   </div>`;
   }
@@ -1196,18 +1027,18 @@
     root.innerHTML = `
     <div class="view-head">
       <h1>Budget vs. Actual</h1>
-      <p class="lead">Committed = actual spend + open encumbrances. Balance = FY${fy} budget minus committed. Click a category to expand, or a project row to drill into its transactions.</p>
+      <p class="lead">Committed = actual spend + open encumbrances. Balance = FY${fy} budget minus committed. Click a cost item group to expand, or a cost item row to drill into its transactions.</p>
     </div>
 
     <div class="filter-bar">
       <div class="field grow">
-        <label>Search project or code</label>
+        <label>Search cost item or code</label>
         <input type="search" id="cmp-search" placeholder="e.g. Advertising, ADV-100\u2026" value="${escapeHtml(search)}" />
       </div>
       <div class="field">
-        <label>Category</label>
+        <label>Cost item group</label>
         <select id="cmp-category">
-          <option value="">All categories</option>
+          <option value="">All cost item groups</option>
           ${s.categories.map((c) => `<option value="${c.id}" ${categoryFilter === c.id ? "selected" : ""}>${c.name}</option>`).join("")}
         </select>
       </div>
@@ -1222,7 +1053,7 @@
       <table class="data-table" id="cmp-table">
         <thead>
           <tr>
-            <th>Category / Project</th>
+            <th>Cost Item Group / Cost Item</th>
             <th>Budget</th>
             <th>Actual</th>
             <th>Encumbered</th>
@@ -1312,7 +1143,7 @@
       lines.push([cat.name, cat.budget, cat.actual, cat.encumbrance, cat.committed, cat.balance]);
       for (const p of cat.projects) lines.push([`  ${p.name} (${p.code})`, p.budget, p.actual, p.encumbrance, p.committed, p.balance]);
     }
-    const csv = toCsv(["Category / Project", "Budget", "Actual", "Encumbered", "Committed", "Balance"], lines);
+    const csv = toCsv(["Cost Item Group / Cost Item", "Budget", "Actual", "Encumbered", "Committed", "Balance"], lines);
     downloadTextFile(`budget-vs-actual-FY${fy}.csv`, csv);
   }
   function escapeHtml(s) {
@@ -1346,7 +1177,7 @@
     root.innerHTML = `
     <div class="view-head">
       <h1>Run Rate &amp; Forecast</h1>
-      <p class="lead">Projected year-end spend = year-to-date actual + (average monthly actual \xD7 remaining months). Compared against each project's FY${fy} budget to flag pace issues before year-end.</p>
+      <p class="lead">Projected year-end spend = year-to-date actual + (average monthly actual \xD7 remaining months). Compared against each cost item's FY${fy} budget to flag pace issues before year-end.</p>
     </div>
 
     <div class="filter-bar">
@@ -1356,7 +1187,7 @@
           <option value="">Entire portfolio</option>
           ${rows.map((cat) => `
             <optgroup label="${cat.name}">
-              <option value="cat:${cat.id}" ${focus === "cat:" + cat.id ? "selected" : ""}>${cat.name} (category total)</option>
+              <option value="cat:${cat.id}" ${focus === "cat:" + cat.id ? "selected" : ""}>${cat.name} (cost item group total)</option>
               ${cat.projects.map((p) => `<option value="proj:${p.code}" ${focus === "proj:" + p.code ? "selected" : ""}>${p.name}</option>`).join("")}
             </optgroup>`).join("")}
         </select>
@@ -1381,7 +1212,7 @@
     <div class="table-scroll">
       <table class="data-table">
         <thead><tr>
-          <th>Category / Project</th><th>Months elapsed</th><th>YTD actual</th><th>Avg / month</th>
+          <th>Cost Item Group / Cost Item</th><th>Months elapsed</th><th>YTD actual</th><th>Avg / month</th>
           <th>Projected annual</th><th>FY${fy} budget</th><th>Projected variance</th><th>Status</th>
         </tr></thead>
         <tbody>
@@ -1482,8 +1313,8 @@
     const actualsByProject = aggregateActuals(s.transactions, fy);
     const budgetMap = budgetByProject(s.budgetLines, fy);
     root.innerHTML = `
-    <div class="view-head"><h1>Drill-Down</h1><p class="lead">Pick a category to explore its projects, then a project to see every underlying transaction.</p></div>
-    ${crumbs([{ label: "All categories" }])}
+    <div class="view-head"><h1>Drill-Down</h1><p class="lead">Pick a cost item group to explore its cost items, then a cost item to see every underlying transaction.</p></div>
+    ${crumbs([{ label: "All cost item groups" }])}
     <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">
       ${s.categories.map((c) => {
       const projs = s.projects.filter((p) => p.categoryId === c.id);
@@ -1497,7 +1328,7 @@
       }, 0);
       return `<div class="card" data-cat="${c.id}" style="cursor:pointer">
           <div style="font-weight:700;font-size:14px;margin-bottom:6px">${c.name}</div>
-          <div class="hint">${projs.length} project${projs.length === 1 ? "" : "s"}</div>
+          <div class="hint">${projs.length} cost item${projs.length === 1 ? "" : "s"}</div>
           <div style="margin-top:10px;font-size:13px">$${fmtMoney(actual, { compact: true })} <span class="hint">actual of</span> $${fmtMoney(budget, { compact: true })}</div>
         </div>`;
     }).join("")}
@@ -1512,11 +1343,11 @@
     const actualsByProject = aggregateActuals(s.transactions, fy);
     const budgetMap = budgetByProject(s.budgetLines, fy);
     root.innerHTML = `
-    <div class="view-head"><h1>${cat ? cat.name : "Category"}</h1></div>
-    ${crumbs([{ label: "All categories", action: "root" }, { label: cat ? cat.name : "" }])}
+    <div class="view-head"><h1>${cat ? cat.name : "Cost Item Group"}</h1></div>
+    ${crumbs([{ label: "All cost item groups", action: "root" }, { label: cat ? cat.name : "" }])}
     <div class="table-scroll">
       <table class="data-table">
-        <thead><tr><th>Project</th><th>Budget</th><th>Actual</th><th>Encumbered</th><th>Balance</th><th>Status</th></tr></thead>
+        <thead><tr><th>Cost Item</th><th>Budget</th><th>Actual</th><th>Encumbered</th><th>Balance</th><th>Status</th></tr></thead>
         <tbody>
           ${projects.map((p) => {
       const a = actualsByProject.get(p.code) || { actual: 0, encumbrance: 0, actualByMonth: Array(12).fill(0), encumbranceByMonth: Array(12).fill(0) };
@@ -1567,8 +1398,8 @@
     txPage = Math.min(txPage, totalPages);
     const pageRows = txs.slice((txPage - 1) * PAGE_SIZE, txPage * PAGE_SIZE);
     root.innerHTML = `
-    <div class="view-head"><h1>${proj ? proj.name : "Project"} <span class="badge-soft">${projectCode}</span></h1></div>
-    ${crumbs([{ label: "All categories", action: "root" }, { label: cat ? cat.name : "", action: "cat" }, { label: proj ? proj.name : "" }])}
+    <div class="view-head"><h1>${proj ? proj.name : "Cost Item"} <span class="badge-soft">${projectCode}</span></h1></div>
+    ${crumbs([{ label: "All cost item groups", action: "root" }, { label: cat ? cat.name : "", action: "cat" }, { label: proj ? proj.name : "" }])}
 
     <div class="grid kpi-row">
       ${kpiCard({ label: `FY${fy} budget`, value: "$" + fmtMoney(b.total, { compact: true }), icon: "layers", iconColor: "var(--series-1)" })}
@@ -1694,8 +1525,8 @@
     const s = Store.state;
     if (!planFy) planFy = s.fiscalYear;
     if (!s.categories.length) {
-      root.innerHTML = `<div class="view-head"><h1>Planning</h1></div><div class="card empty-state">Load data from <b>Data &amp; Settings</b> first, or add a category below to start from scratch.
-      <div style="margin-top:12px"><button class="btn btn-primary" id="add-cat-empty">Add first category</button></div></div>`;
+      root.innerHTML = `<div class="view-head"><h1>Planning</h1></div><div class="card empty-state">Load data from <b>Data &amp; Settings</b> first, or add a cost item group below to start from scratch.
+      <div style="margin-top:12px"><button class="btn btn-primary" id="add-cat-empty">Add first cost item group</button></div></div>`;
       root.querySelector("#add-cat-empty").addEventListener("click", () => addCategoryModal(root));
       return;
     }
@@ -1707,7 +1538,7 @@
     root.innerHTML = `
     <div class="view-head">
       <h1>Planning</h1>
-      <p class="lead">Enter the budget for each project by month or by quarter. Changes save automatically to this browser. Use <b>Data &amp; Settings \u2192 Export workbook</b> to share the plan with the rest of the team.</p>
+      <p class="lead">Enter the budget for each cost item by month or by quarter. Changes save automatically to this browser. Use <b>Data &amp; Settings \u2192 Export workbook</b> to share the plan with the rest of the team.</p>
     </div>
 
     <div class="filter-bar">
@@ -1724,7 +1555,7 @@
       </div>
       <div class="field-row" style="margin-left:auto">
         <button class="btn btn-sm" id="copy-fy">Copy from another year\u2026</button>
-        <button class="btn btn-sm" id="add-cat">+ Category</button>
+        <button class="btn btn-sm" id="add-cat">+ Cost item group</button>
       </div>
     </div>
 
@@ -1732,7 +1563,7 @@
       <table class="plan-grid">
         <thead>
           <tr>
-            <th style="text-align:left;position:sticky;left:0;z-index:2">Category / Project</th>
+            <th style="text-align:left;position:sticky;left:0;z-index:2">Cost Item Group / Cost Item</th>
             ${periodCols().map((c) => `<th>${c}</th>`).join("")}
             <th>FY${planFy} total</th>
             <th></th>
@@ -1770,10 +1601,11 @@
     });
     root.querySelectorAll("[data-add-project]").forEach((b) => b.addEventListener("click", () => addProjectModal(root, b.getAttribute("data-add-project"))));
     root.querySelectorAll("[data-del-project]").forEach((b) => b.addEventListener("click", async () => {
-      if (!confirm("Remove this project and its budget entries?")) return;
+      if (!confirm("Remove this cost item and its budget entries?")) return;
       await Store.deleteProject(b.getAttribute("data-del-project"));
       render5(root);
     }));
+    root.querySelectorAll("[data-notes]").forEach((b) => b.addEventListener("click", () => notesModal(root, b.getAttribute("data-notes"))));
   }
   function periodCols() {
     return periodMode === "quarter" ? ["Q1", "Q2", "Q3", "Q4"] : MONTH_NAMES;
@@ -1843,20 +1675,27 @@
   function renderCategoryBlock(cat, s, budgetMap) {
     const projects = s.projects.filter((p) => p.categoryId === cat.id);
     const catTotal = projects.reduce((sum, p) => sum + periodColsTotal(budgetMap, p.code), 0);
+    const fy = planFy;
     return `
     <tr class="category-row" data-category="${cat.id}"><td class="label-cell">${cat.name}</td>
       ${periodCols().map((_, i) => `<td class="total-cell" data-period-total="${i}">$${fmtMoney(projects.reduce((s2, p) => s2 + periodValue(budgetMap, p.code, i), 0), { compact: true })}</td>`).join("")}
       <td class="total-cell" data-cat-total-value>$${fmtMoney(catTotal, { compact: true })}</td>
-      <td style="text-align:center"><button class="btn btn-sm" data-add-project="${cat.id}" title="Add project">+</button></td>
+      <td style="text-align:center"><button class="btn btn-sm" data-add-project="${cat.id}" title="Add cost item">+</button></td>
     </tr>
-    ${projects.map((p) => `
+    ${projects.map((p) => {
+      const hasNote = s.planNotes.some((n) => n.fiscalYear === fy && n.projectCode === p.code && n.text);
+      return `
       <tr data-project="${cssEscape(p.code)}" data-category-member="${cat.id}">
         <td class="sub-label-cell">${p.name} <span class="badge-soft">${p.code}</span></td>
         ${periodCols().map((_, i) => `<td><input class="cell-input" type="number" step="1" min="0" data-code="${p.code}" data-period="${i}" value="${round0(periodValue(budgetMap, p.code, i))}" /></td>`).join("")}
         <td class="total-cell row-total-value">$${fmtMoney(periodColsTotal(budgetMap, p.code), { compact: true })}</td>
-        <td style="text-align:center"><button class="btn btn-sm btn-danger" data-del-project="${p.code}" title="Remove project">\xD7</button></td>
+        <td style="text-align:center;white-space:nowrap">
+          <button class="btn btn-sm ${hasNote ? "btn-has-note" : ""}" data-notes="${p.code}" title="${hasNote ? "View/edit note" : "Add note"}">${icon("note", { size: 13, strokeWidth: 2 })}</button>
+          <button class="btn btn-sm btn-danger" data-del-project="${p.code}" title="Remove cost item">\xD7</button>
+        </td>
       </tr>
-    `).join("")}
+    `;
+    }).join("")}
   `;
   }
   function periodColsTotal(budgetMap, code) {
@@ -1875,15 +1714,15 @@
   }
   function addCategoryModal(root) {
     openModal(`
-    <h2>Add category</h2>
+    <h2>Add cost item group</h2>
     <div class="field"><label>Name</label><input type="text" id="new-cat-name" placeholder="e.g. Digital Marketing" /></div>
-    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-cat">Add category</button></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-cat">Add cost item group</button></div>
   `, {
       onMount: (modal, close) => {
         modal.querySelector("[data-close]").addEventListener("click", close);
         modal.querySelector("#save-cat").addEventListener("click", async () => {
           const name = modal.querySelector("#new-cat-name").value.trim();
-          if (!name) return toast("Enter a category name", "err");
+          if (!name) return toast("Enter a name", "err");
           await Store.upsertCategory({ name });
           close();
           render5(root);
@@ -1893,10 +1732,10 @@
   }
   function addProjectModal(root, categoryId) {
     openModal(`
-    <h2>Add project</h2>
-    <div class="field"><label>Project name</label><input type="text" id="new-proj-name" placeholder="e.g. Radio Sponsorships" /></div>
+    <h2>Add cost item</h2>
+    <div class="field"><label>Name</label><input type="text" id="new-proj-name" placeholder="e.g. Radio Sponsorships" /></div>
     <div class="field" style="margin-top:8px"><label>Code (unique)</label><input type="text" id="new-proj-code" placeholder="e.g. RAD-100" /></div>
-    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-proj">Add project</button></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-proj">Add cost item</button></div>
   `, {
       onMount: (modal, close) => {
         modal.querySelector("#new-proj-code").value = "";
@@ -1904,7 +1743,7 @@
         modal.querySelector("#save-proj").addEventListener("click", async () => {
           const name = modal.querySelector("#new-proj-name").value.trim();
           let code = modal.querySelector("#new-proj-code").value.trim();
-          if (!name) return toast("Enter a project name", "err");
+          if (!name) return toast("Enter a name", "err");
           if (!code) code = slugify(name).toUpperCase();
           if (Store.state.projects.some((p) => p.code === code)) return toast("That code is already in use", "err");
           await Store.upsertProject({ code, name, categoryId });
@@ -1914,11 +1753,43 @@
       }
     });
   }
+  function notesModal(root, code) {
+    const proj = Store.state.projects.find((p) => p.code === code);
+    const existing = Store.state.planNotes.find((n) => n.fiscalYear === planFy && n.projectCode === code);
+    openModal(`
+    <h2>Note \u2014 ${proj ? proj.name : code} <span class="badge-soft">FY${planFy}</span></h2>
+    <p class="hint">Context for this cost item's plan \u2014 an assumption, a rationale, a flag for next review. Visible to anyone who opens this workbook.</p>
+    <div class="field" style="margin-top:8px"><textarea id="note-text" rows="5" style="width:100%;resize:vertical;font:inherit" placeholder="e.g. Includes the Q3 campaign refresh; pending sign-off from brand team.">${existing ? escapeHtml3(existing.text) : ""}</textarea></div>
+    <div class="modal-actions">
+      ${existing ? `<button class="btn btn-danger" id="note-delete" style="margin-right:auto">Delete note</button>` : ""}
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn btn-primary" id="note-save">Save note</button>
+    </div>
+  `, {
+      onMount: (modal, close) => {
+        var _a;
+        modal.querySelector("[data-close]").addEventListener("click", close);
+        modal.querySelector("#note-save").addEventListener("click", async () => {
+          await Store.setPlanNote(planFy, code, modal.querySelector("#note-text").value);
+          close();
+          render5(root);
+        });
+        (_a = modal.querySelector("#note-delete")) == null ? void 0 : _a.addEventListener("click", async () => {
+          await Store.setPlanNote(planFy, code, "");
+          close();
+          render5(root);
+        });
+      }
+    });
+  }
+  function escapeHtml3(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
   function copyFromYearModal(root, yearList) {
     const sourceOptions = yearList.filter((y) => y !== planFy);
     openModal(`
     <h2>Copy budget from another year</h2>
-    <p class="hint">Copies the monthly split from the source year into FY${planFy} for every project, scaled by the growth % below. Existing FY${planFy} amounts will be overwritten.</p>
+    <p class="hint">Copies the monthly split from the source year into FY${planFy} for every cost item, scaled by the growth % below. Existing FY${planFy} amounts will be overwritten.</p>
     <div class="field"><label>Source year</label><select id="copy-source">${sourceOptions.map((y) => `<option value="${y}">FY${y}</option>`).join("")}</select></div>
     <div class="field" style="margin-top:8px"><label>Growth adjustment (%)</label><input type="number" id="copy-growth" value="0" /></div>
     <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="copy-run">Copy</button></div>
@@ -1933,8 +1804,7 @@
             fiscalYear: planFy,
             projectCode: b.projectCode,
             month: b.month,
-            amount: Math.round(b.amount * growth * 100) / 100,
-            notes: ""
+            amount: Math.round(b.amount * growth * 100) / 100
           }));
           await Store.bulkSetBudgetLines(lines);
           toast(`Copied ${lines.length} line(s) from FY${source}`, "ok");
@@ -2019,7 +1889,7 @@
   }
   var GL_HEADER_SIGNATURE = ["gl accounts", "accounted net", "gl period"];
   var REQUIRED_FIELDS = [
-    { key: "project", label: "Project / cost element code", required: true },
+    { key: "project", label: "Cost item code", required: true },
     { key: "amount", label: "Amount", required: true },
     { key: "date", label: "Date or period", required: true },
     { key: "type", label: "Actual vs. encumbrance", required: false },
@@ -2207,23 +2077,25 @@
     }
     return categories;
   }
-  function buildWorkbook({ categories, projects, budgetLines, meta, transactions }, includeTransactions) {
+  function buildWorkbook({ categories, projects, budgetLines, meta, transactions, planNotes }, includeTransactions) {
     const wb = window.XLSX.utils.book_new();
     const metaRows = [["key", "value"], ...Object.entries(meta || {}).map(([k, v]) => [k, JSON.stringify(v)])];
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(metaRows), "Meta");
     const catRows = [["id", "name", "sortOrder"], ...categories.map((c) => [c.id, c.name, c.sortOrder])];
-    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(catRows), "Categories");
-    const projRows = [["code", "name", "categoryId", "active"], ...projects.map((p) => [p.code, p.name, p.categoryId, p.active ? 1 : 0])];
-    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(projRows), "Projects");
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(catRows), "CostItemGroups");
+    const projRows = [["code", "name", "costItemGroupId", "active"], ...projects.map((p) => [p.code, p.name, p.categoryId, p.active ? 1 : 0])];
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(projRows), "CostItems");
     const blRows = [
-      ["fiscalYear", "projectCode", "month", "amount", "notes"],
-      ...budgetLines.map((b) => [b.fiscalYear, b.projectCode, b.month, b.amount, b.notes || ""])
+      ["fiscalYear", "costItemCode", "month", "amount"],
+      ...budgetLines.map((b) => [b.fiscalYear, b.projectCode, b.month, b.amount])
     ];
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(blRows), "BudgetLines");
+    const noteRows = [["fiscalYear", "costItemCode", "text"], ...(planNotes || []).map((n) => [n.fiscalYear, n.projectCode, n.text])];
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(noteRows), "Notes");
     if (includeTransactions) {
       const txRows = [
-        ["id", "project", "ferc", "year", "month", "balanceType", "docNo", "desc", "vendor", "amount", "postedDate", "batchId"],
-        ...transactions.map((t) => [t.id, t.project, t.ferc, t.year, t.month, t.balanceType, t.docNo, t.desc, t.vendor, t.amount, t.postedDate, t.batchId])
+        ["id", "costItemCode", "ferc", "year", "month", "balanceType", "docType", "docNo", "desc", "vendor", "amount", "postedDate", "batchId"],
+        ...transactions.map((t) => [t.id, t.project, t.ferc, t.year, t.month, t.balanceType, t.docType, t.docNo, t.desc, t.vendor, t.amount, t.postedDate, t.batchId])
       ];
       window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(txRows), "Transactions");
     }
@@ -2234,17 +2106,22 @@
   }
   function parseBudgetBridgeWorkbook(wb) {
     const sheetRows = (name) => wb.Sheets[name] ? window.XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: null }) : [];
-    const hasOwnFormat = ["Categories", "Projects", "BudgetLines"].every((s) => wb.SheetNames.includes(s));
+    const hasOwnFormat = ["CostItemGroups", "CostItems", "BudgetLines"].every((s) => wb.SheetNames.includes(s));
     if (!hasOwnFormat) return null;
-    const categories = sheetRows("Categories").map((r) => ({ id: String(r.id), name: r.name, sortOrder: Number(r.sortOrder) || 0 }));
-    const projects = sheetRows("Projects").map((r) => ({ code: String(r.code), name: r.name, categoryId: r.categoryId != null ? String(r.categoryId) : null, active: r.active !== 0 }));
+    const categories = sheetRows("CostItemGroups").map((r) => ({ id: String(r.id), name: r.name, sortOrder: Number(r.sortOrder) || 0 }));
+    const projects = sheetRows("CostItems").map((r) => ({ code: String(r.code), name: r.name, categoryId: r.costItemGroupId != null ? String(r.costItemGroupId) : null, active: r.active !== 0 }));
     const budgetLines = sheetRows("BudgetLines").map((r) => ({
-      id: `${r.fiscalYear}:${r.projectCode}:${r.month}`,
+      id: `${r.fiscalYear}:${r.costItemCode}:${r.month}`,
       fiscalYear: Number(r.fiscalYear),
-      projectCode: String(r.projectCode),
+      projectCode: String(r.costItemCode),
       month: Number(r.month),
-      amount: Number(r.amount) || 0,
-      notes: r.notes || ""
+      amount: Number(r.amount) || 0
+    }));
+    const planNotes = sheetRows("Notes").filter((r) => r.text).map((r) => ({
+      id: `${r.fiscalYear}:${r.costItemCode}`,
+      fiscalYear: Number(r.fiscalYear),
+      projectCode: String(r.costItemCode),
+      text: String(r.text)
     }));
     const metaRows = sheetRows("Meta");
     const meta = {};
@@ -2257,11 +2134,12 @@
     }
     const transactions = sheetRows("Transactions").map((r) => ({
       id: String(r.id),
-      project: String(r.project),
+      project: String(r.costItemCode),
       ferc: r.ferc != null ? String(r.ferc) : null,
       year: Number(r.year),
       month: Number(r.month),
       balanceType: r.balanceType || "A",
+      docType: r.docType || null,
       docNo: r.docNo,
       desc: r.desc,
       vendor: r.vendor,
@@ -2269,7 +2147,7 @@
       postedDate: r.postedDate,
       batchId: r.batchId || "imported-workbook"
     }));
-    return { categories, projects, budgetLines, meta, transactions };
+    return { categories, projects, budgetLines, meta, transactions, planNotes };
   }
 
   // js/views/dataSettings.js
@@ -2278,12 +2156,12 @@
     root.innerHTML = `
     <div class="view-head">
       <h1>Data &amp; Settings</h1>
-      <p class="lead">Bring in your actuals export, manage the project/category list, and control how this tool's data is stored and shared.</p>
+      <p class="lead">Bring in your actuals export, manage the cost item / cost item group list, and control how this tool's data is stored and shared.</p>
     </div>
     <div class="tabbar">
       <button data-tab="import" class="${tab === "import" ? "active" : ""}">Import actuals</button>
       <button data-tab="workbook" class="${tab === "workbook" ? "active" : ""}">Share workbook</button>
-      <button data-tab="structure" class="${tab === "structure" ? "active" : ""}">Categories &amp; projects</button>
+      <button data-tab="structure" class="${tab === "structure" ? "active" : ""}">Cost item groups &amp; cost items</button>
       <button data-tab="storage" class="${tab === "storage" ? "active" : ""}">Storage &amp; danger zone</button>
     </div>
     <div id="tab-body"></div>
@@ -2308,7 +2186,7 @@
     </div>
     <div class="card" style="margin-bottom:16px">
       <h3>Budget planning template</h3>
-      <p class="hint">Optional: import an existing category / quarter budget grid (a sheet with <code>DESCRIPTION</code>, <code>Q1</code>\u2013<code>Q4</code> columns) to seed the Planning view instead of typing it in from scratch.</p>
+      <p class="hint">Optional: import an existing cost item group / quarter budget grid (a sheet with <code>DESCRIPTION</code>, <code>Q1</code>\u2013<code>Q4</code> columns) to seed the Planning view instead of typing it in from scratch.</p>
       <div class="dropzone" id="dz-template">Drop a budget template here, or click to choose one<br><span class="hint">.xlsx</span></div>
       <input type="file" id="file-template" accept=".xlsx,.xls" style="display:none" />
     </div>
@@ -2370,7 +2248,7 @@
       const wb = await readAnyWorkbook(file);
       const bbWorkbook = parseBudgetBridgeWorkbook(wb);
       if (bbWorkbook) {
-        openModal(`<h2>This looks like a BudgetBridge workbook</h2><p>Use <b>Share workbook \u2192 Import workbook</b> instead so categories, projects and budget lines come in correctly.</p><div class="modal-actions"><button class="btn btn-primary" data-close>OK</button></div>`, {
+        openModal(`<h2>This looks like a BudgetBridge workbook</h2><p>Use <b>Share workbook \u2192 Import workbook</b> instead so cost item groups, cost items and budget lines come in correctly.</p><div class="modal-actions"><button class="btn btn-primary" data-close>OK</button></div>`, {
           onMount: (m, close) => m.querySelector("[data-close]").addEventListener("click", close)
         });
         return;
@@ -2401,7 +2279,7 @@
   }
   function openMappingModal(found, file) {
     const guesses = {
-      project: guessColumn(found.header, ["project", "cost element", "code", "ci"]),
+      project: guessColumn(found.header, ["cost item", "project", "cost element", "code", "ci"]),
       amount: guessColumn(found.header, ["amount", "net", "actual", "spend"]),
       date: guessColumn(found.header, ["date", "period"]),
       type: guessColumn(found.header, ["type", "balance type"]),
@@ -2431,7 +2309,7 @@
           modal.querySelectorAll("[data-map]").forEach((sel) => {
             mapping[sel.dataset.map] = sel.value || null;
           });
-          if (!mapping.project || !mapping.amount || !mapping.date) return toast("Project, amount and date are required", "err");
+          if (!mapping.project || !mapping.amount || !mapping.date) return toast("Cost item, amount and date are required", "err");
           const rows = parseActualsWithMapping(found.header, found.rows, mapping);
           if (!rows.length) return toast("No usable rows found with that mapping", "err");
           await Store.importTransactions(rows, { filename: file.name, type: "mapped" });
@@ -2446,7 +2324,7 @@
     try {
       const wb = await readAnyWorkbook(file);
       const sheets = inspectWorkbookForBudgetTemplate(wb);
-      if (!sheets.length) return toast("Couldn't find a category/quarter grid in that file", "err");
+      if (!sheets.length) return toast("Couldn't find a cost item group/quarter grid in that file", "err");
       openModal(`
       <h2>Import budget template</h2>
       <p class="hint">Found ${sheets.length} matching sheet(s). Choose a fiscal year to import into.</p>
@@ -2476,13 +2354,13 @@
                 const qmap = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]];
                 ["q1", "q2", "q3", "q4"].forEach((q, qi) => {
                   const perMonth = Math.round((cat[q] || 0) / 3 * 100) / 100;
-                  qmap[qi].forEach((m) => lines.push({ id: `${fy}:${code}:${m + 1}`, fiscalYear: fy, projectCode: code, month: m + 1, amount: perMonth, notes: "" }));
+                  qmap[qi].forEach((m) => lines.push({ id: `${fy}:${code}:${m + 1}`, fiscalYear: fy, projectCode: code, month: m + 1, amount: perMonth }));
                 });
               }
             }
             lineCount = lines.length;
             await Store.bulkSetBudgetLines(lines);
-            toast(`Imported ${catCount} categor${catCount === 1 ? "y" : "ies"}, ${projCount} projects, FY${fy}`, "ok");
+            toast(`Imported ${catCount} cost item group${catCount === 1 ? "" : "s"}, ${projCount} cost item${projCount === 1 ? "" : "s"}, FY${fy}`, "ok");
             close();
             render6(document.getElementById("view-root"));
           });
@@ -2499,7 +2377,7 @@
     <div class="grid two-col">
       <div class="card">
         <h3>Export workbook</h3>
-        <p class="hint">Creates a single .xlsx with your categories, projects and budget plan (and, optionally, every transaction). Save it into a shared Google Drive / OneDrive / SharePoint folder so teammates can pick up your latest numbers with <b>Import workbook</b> below.</p>
+        <p class="hint">Creates a single .xlsx with your cost item groups, cost items and budget plan (and, optionally, every transaction). Save it into a shared Google Drive / OneDrive / SharePoint folder so teammates can pick up your latest numbers with <b>Import workbook</b> below.</p>
         <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="inc-tx" /> Include full transaction detail <span class="hint">(bigger file; needed for others to see drill-down detail)</span></label>
         <button class="btn btn-primary" id="export-wb">Export workbook (.xlsx)</button>
       </div>
@@ -2517,7 +2395,7 @@
   `;
     body.querySelector("#export-wb").addEventListener("click", () => {
       const includeTx = body.querySelector("#inc-tx").checked;
-      const wb = buildWorkbook({ categories: s.categories, projects: s.projects, budgetLines: s.budgetLines, transactions: s.transactions, meta: { exportedAt: (/* @__PURE__ */ new Date()).toISOString(), fiscalYear: s.fiscalYear } }, includeTx);
+      const wb = buildWorkbook({ categories: s.categories, projects: s.projects, budgetLines: s.budgetLines, transactions: s.transactions, planNotes: s.planNotes, meta: { exportedAt: (/* @__PURE__ */ new Date()).toISOString(), fiscalYear: s.fiscalYear } }, includeTx);
       downloadWorkbook(wb, `budgetbridge-workbook-FY${s.fiscalYear}.xlsx`);
       toast("Workbook downloaded", "ok");
     });
@@ -2541,24 +2419,24 @@
     body.innerHTML = `
     <div class="card" style="margin-bottom:16px">
       <div class="field-row" style="justify-content:space-between">
-        <h3 style="margin:0">Categories</h3>
-        <button class="btn btn-sm" id="add-cat">+ Add category</button>
+        <h3 style="margin:0">Cost item groups</h3>
+        <button class="btn btn-sm" id="add-cat">+ Add cost item group</button>
       </div>
       <div class="table-scroll" style="margin-top:10px"><table class="data-table">
-        <thead><tr><th>Name</th><th># Projects</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th># Cost items</th><th></th></tr></thead>
         <tbody>${s.categories.map((c) => `<tr>
-          <td><input type="text" value="${escapeHtml3(c.name)}" data-rename-cat="${c.id}" /></td>
+          <td><input type="text" value="${escapeHtml4(c.name)}" data-rename-cat="${c.id}" /></td>
           <td class="num">${s.projects.filter((p) => p.categoryId === c.id).length}</td>
           <td><button class="btn btn-sm btn-danger" data-del-cat="${c.id}">Delete</button></td>
         </tr>`).join("")}</tbody>
       </table></div>
     </div>
     <div class="card">
-      <h3>Projects</h3>
+      <h3>Cost items</h3>
       <div class="table-scroll" style="margin-top:10px"><table class="data-table">
-        <thead><tr><th>Name</th><th>Code</th><th>Category</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Code</th><th>Cost item group</th><th></th></tr></thead>
         <tbody>${s.projects.map((p) => `<tr>
-          <td><input type="text" value="${escapeHtml3(p.name)}" data-rename-proj="${p.code}" /></td>
+          <td><input type="text" value="${escapeHtml4(p.name)}" data-rename-proj="${p.code}" /></td>
           <td class="badge-soft">${p.code}</td>
           <td><select data-recat="${p.code}">${s.categories.map((c) => `<option value="${c.id}" ${c.id === p.categoryId ? "selected" : ""}>${c.name}</option>`).join("")}</select></td>
           <td><button class="btn btn-sm btn-danger" data-del-proj="${p.code}">Delete</button></td>
@@ -2567,7 +2445,7 @@
     </div>
   `;
     body.querySelector("#add-cat").addEventListener("click", () => {
-      const name = prompt("Category name?");
+      const name = prompt("Cost item group name?");
       if (name && name.trim()) Store.upsertCategory({ name: name.trim() }).then(() => render6(document.getElementById("view-root")));
     });
     body.querySelectorAll("[data-rename-cat]").forEach((inp) => inp.addEventListener("change", async () => {
@@ -2593,7 +2471,7 @@
       toast("Saved", "ok");
     }));
     body.querySelectorAll("[data-del-proj]").forEach((b) => b.addEventListener("click", async () => {
-      if (!confirm("Delete this project and its budget lines?")) return;
+      if (!confirm("Delete this cost item and its budget lines?")) return;
       await Store.deleteProject(b.dataset.delProj);
       render6(document.getElementById("view-root"));
     }));
@@ -2607,11 +2485,10 @@
         <h3>What's in this browser right now</h3>
         <table class="data-table" style="margin-top:8px">
           <tbody>
-            <tr><td>Categories</td><td class="num">${s.categories.length}</td></tr>
-            <tr><td>Projects</td><td class="num">${s.projects.length}</td></tr>
+            <tr><td>Cost item groups</td><td class="num">${s.categories.length}</td></tr>
+            <tr><td>Cost items</td><td class="num">${s.projects.length}</td></tr>
             <tr><td>Budget line entries</td><td class="num">${s.budgetLines.length}</td></tr>
             <tr><td>Transaction lines</td><td class="num">${s.transactions.length.toLocaleString()}</td></tr>
-            <tr><td>Data source</td><td>${s.usingDemoData ? '<span class="badge-soft">Sample data</span>' : '<span class="badge-soft">Your imported data</span>'}</td></tr>
             ${usage ? `<tr><td>Estimated browser storage used</td><td class="num">${formatBytes(usage.usage || 0)}</td></tr>` : ""}
           </tbody>
         </table>
@@ -2621,27 +2498,17 @@
         <h3>Danger zone</h3>
         <div class="stack">
           <div>
-            <button class="btn" id="load-demo">Load sample data</button>
-            <p class="hint">Replaces everything currently loaded with a fabricated demo dataset \u2014 a fast way to explore the tool.</p>
-          </div>
-          <div>
             <button class="btn btn-danger" id="clear-tx">Clear transactions only</button>
-            <p class="hint">Removes imported actuals/encumbrances but keeps your categories, projects and budget plan.</p>
+            <p class="hint">Removes imported actuals/encumbrances but keeps your cost item groups, cost items and budget plan.</p>
           </div>
           <div>
             <button class="btn btn-danger" id="wipe-all">Erase everything</button>
-            <p class="hint">Deletes all categories, projects, budget lines and transactions from this browser. Cannot be undone \u2014 export a workbook first if you want a copy.</p>
+            <p class="hint">Deletes all cost item groups, cost items, budget lines and transactions from this browser. Cannot be undone \u2014 export a workbook first if you want a copy.</p>
           </div>
         </div>
       </div>
     </div>
   `;
-    body.querySelector("#load-demo").addEventListener("click", async () => {
-      if (s.categories.length && !confirm("Replace current data with sample data?")) return;
-      await Store.loadDemoData();
-      toast("Sample data loaded", "ok");
-      render6(document.getElementById("view-root"));
-    });
     body.querySelector("#clear-tx").addEventListener("click", async () => {
       if (!confirm("Remove all imported transactions?")) return;
       await Store.clearTransactions();
@@ -2655,7 +2522,7 @@
       render6(document.getElementById("view-root"));
     });
   }
-  function escapeHtml3(s) {
+  function escapeHtml4(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
   function formatBytes(n) {
@@ -2706,7 +2573,6 @@
     nav.innerHTML = html;
     nav.querySelectorAll("[data-route]").forEach((b) => b.addEventListener("click", () => Store.setRoute(b.getAttribute("data-route"))));
     document.getElementById("sidebar-footer").innerHTML = `
-    ${Store.state.usingDemoData ? '<div class="badge-soft" style="margin-bottom:6px">Sample data loaded</div>' : ""}
     Data stored in this browser only.<br/>See Data &amp; Settings to share.
   `;
   }

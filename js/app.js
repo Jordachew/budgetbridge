@@ -51,7 +51,6 @@ function renderNav() {
   nav.querySelectorAll("[data-route]").forEach((b) => b.addEventListener("click", () => Store.setRoute(b.getAttribute("data-route"))));
 
   document.getElementById("sidebar-footer").innerHTML = `
-    ${Store.state.usingDemoData ? '<div class="badge-soft" style="margin-bottom:6px">Sample data loaded</div>' : ""}
     Data stored in this browser only.<br/>See Data &amp; Settings to share.
   `;
 }

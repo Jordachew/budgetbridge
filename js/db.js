@@ -6,7 +6,7 @@
 // ===========================================================
 
 const DB_NAME = "budgetbridge";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 /** @type {IDBDatabase|null} */
 let _db = null;
@@ -39,6 +39,10 @@ function openDb() {
       }
       if (!db.objectStoreNames.contains("importBatches")) {
         db.createObjectStore("importBatches", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("planNotes")) {
+        const s = db.createObjectStore("planNotes", { keyPath: "id" });
+        s.createIndex("byFyProject", ["fiscalYear", "projectCode"], { unique: false });
       }
     };
     req.onsuccess = () => { _db = req.result; resolve(_db); };
@@ -104,7 +108,7 @@ export const db = {
     }));
   },
   async wipeAll() {
-    return tx(["meta", "categories", "projects", "budgetLines", "transactions", "importBatches"], "readwrite", (s) => {
+    return tx(["meta", "categories", "projects", "budgetLines", "transactions", "importBatches", "planNotes"], "readwrite", (s) => {
       for (const n of Object.keys(s)) s[n].clear();
     });
   },

@@ -1,6 +1,7 @@
 import { Store } from "../store.js";
 import { budgetByProject, fmtMoney, MONTH_NAMES, slugify } from "../calc.js";
 import { toast, openModal, debounce } from "../ui.js";
+import { icon } from "../icons.js";
 
 let planFy = null;
 let periodMode = "quarter"; // "month" | "quarter"
@@ -12,8 +13,8 @@ export function render(root) {
   const s = Store.state;
   if (!planFy) planFy = s.fiscalYear;
   if (!s.categories.length) {
-    root.innerHTML = `<div class="view-head"><h1>Planning</h1></div><div class="card empty-state">Load data from <b>Data &amp; Settings</b> first, or add a category below to start from scratch.
-      <div style="margin-top:12px"><button class="btn btn-primary" id="add-cat-empty">Add first category</button></div></div>`;
+    root.innerHTML = `<div class="view-head"><h1>Planning</h1></div><div class="card empty-state">Load data from <b>Data &amp; Settings</b> first, or add a cost item group below to start from scratch.
+      <div style="margin-top:12px"><button class="btn btn-primary" id="add-cat-empty">Add first cost item group</button></div></div>`;
     root.querySelector("#add-cat-empty").addEventListener("click", () => addCategoryModal(root));
     return;
   }
@@ -25,7 +26,7 @@ export function render(root) {
   root.innerHTML = `
     <div class="view-head">
       <h1>Planning</h1>
-      <p class="lead">Enter the budget for each project by month or by quarter. Changes save automatically to this browser. Use <b>Data &amp; Settings → Export workbook</b> to share the plan with the rest of the team.</p>
+      <p class="lead">Enter the budget for each cost item by month or by quarter. Changes save automatically to this browser. Use <b>Data &amp; Settings → Export workbook</b> to share the plan with the rest of the team.</p>
     </div>
 
     <div class="filter-bar">
@@ -42,7 +43,7 @@ export function render(root) {
       </div>
       <div class="field-row" style="margin-left:auto">
         <button class="btn btn-sm" id="copy-fy">Copy from another year…</button>
-        <button class="btn btn-sm" id="add-cat">+ Category</button>
+        <button class="btn btn-sm" id="add-cat">+ Cost item group</button>
       </div>
     </div>
 
@@ -50,7 +51,7 @@ export function render(root) {
       <table class="plan-grid">
         <thead>
           <tr>
-            <th style="text-align:left;position:sticky;left:0;z-index:2">Category / Project</th>
+            <th style="text-align:left;position:sticky;left:0;z-index:2">Cost Item Group / Cost Item</th>
             ${periodCols().map((c) => `<th>${c}</th>`).join("")}
             <th>FY${planFy} total</th>
             <th></th>
@@ -84,10 +85,11 @@ export function render(root) {
   });
   root.querySelectorAll("[data-add-project]").forEach((b) => b.addEventListener("click", () => addProjectModal(root, b.getAttribute("data-add-project"))));
   root.querySelectorAll("[data-del-project]").forEach((b) => b.addEventListener("click", async () => {
-    if (!confirm("Remove this project and its budget entries?")) return;
+    if (!confirm("Remove this cost item and its budget entries?")) return;
     await Store.deleteProject(b.getAttribute("data-del-project"));
     render(root);
   }));
+  root.querySelectorAll("[data-notes]").forEach((b) => b.addEventListener("click", () => notesModal(root, b.getAttribute("data-notes"))));
 }
 
 function periodCols() { return periodMode === "quarter" ? ["Q1", "Q2", "Q3", "Q4"] : MONTH_NAMES; }
@@ -162,20 +164,27 @@ function cssEscape(s) { return String(s).replace(/[^a-zA-Z0-9_-]/g, "_"); }
 function renderCategoryBlock(cat, s, budgetMap) {
   const projects = s.projects.filter((p) => p.categoryId === cat.id);
   const catTotal = projects.reduce((sum, p) => sum + periodColsTotal(budgetMap, p.code), 0);
+  const fy = planFy;
   return `
     <tr class="category-row" data-category="${cat.id}"><td class="label-cell">${cat.name}</td>
       ${periodCols().map((_, i) => `<td class="total-cell" data-period-total="${i}">$${fmtMoney(projects.reduce((s2, p) => s2 + periodValue(budgetMap, p.code, i), 0), { compact: true })}</td>`).join("")}
       <td class="total-cell" data-cat-total-value>$${fmtMoney(catTotal, { compact: true })}</td>
-      <td style="text-align:center"><button class="btn btn-sm" data-add-project="${cat.id}" title="Add project">+</button></td>
+      <td style="text-align:center"><button class="btn btn-sm" data-add-project="${cat.id}" title="Add cost item">+</button></td>
     </tr>
-    ${projects.map((p) => `
+    ${projects.map((p) => {
+      const hasNote = s.planNotes.some((n) => n.fiscalYear === fy && n.projectCode === p.code && n.text);
+      return `
       <tr data-project="${cssEscape(p.code)}" data-category-member="${cat.id}">
         <td class="sub-label-cell">${p.name} <span class="badge-soft">${p.code}</span></td>
         ${periodCols().map((_, i) => `<td><input class="cell-input" type="number" step="1" min="0" data-code="${p.code}" data-period="${i}" value="${round0(periodValue(budgetMap, p.code, i))}" /></td>`).join("")}
         <td class="total-cell row-total-value">$${fmtMoney(periodColsTotal(budgetMap, p.code), { compact: true })}</td>
-        <td style="text-align:center"><button class="btn btn-sm btn-danger" data-del-project="${p.code}" title="Remove project">×</button></td>
+        <td style="text-align:center;white-space:nowrap">
+          <button class="btn btn-sm ${hasNote ? "btn-has-note" : ""}" data-notes="${p.code}" title="${hasNote ? "View/edit note" : "Add note"}">${icon("note", { size: 13, strokeWidth: 2 })}</button>
+          <button class="btn btn-sm btn-danger" data-del-project="${p.code}" title="Remove cost item">×</button>
+        </td>
       </tr>
-    `).join("")}
+    `;
+    }).join("")}
   `;
 }
 
@@ -196,15 +205,15 @@ function round0(n) { return Math.round(n); }
 
 function addCategoryModal(root) {
   openModal(`
-    <h2>Add category</h2>
+    <h2>Add cost item group</h2>
     <div class="field"><label>Name</label><input type="text" id="new-cat-name" placeholder="e.g. Digital Marketing" /></div>
-    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-cat">Add category</button></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-cat">Add cost item group</button></div>
   `, {
     onMount: (modal, close) => {
       modal.querySelector("[data-close]").addEventListener("click", close);
       modal.querySelector("#save-cat").addEventListener("click", async () => {
         const name = modal.querySelector("#new-cat-name").value.trim();
-        if (!name) return toast("Enter a category name", "err");
+        if (!name) return toast("Enter a name", "err");
         await Store.upsertCategory({ name });
         close(); render(root);
       });
@@ -214,10 +223,10 @@ function addCategoryModal(root) {
 
 function addProjectModal(root, categoryId) {
   openModal(`
-    <h2>Add project</h2>
-    <div class="field"><label>Project name</label><input type="text" id="new-proj-name" placeholder="e.g. Radio Sponsorships" /></div>
+    <h2>Add cost item</h2>
+    <div class="field"><label>Name</label><input type="text" id="new-proj-name" placeholder="e.g. Radio Sponsorships" /></div>
     <div class="field" style="margin-top:8px"><label>Code (unique)</label><input type="text" id="new-proj-code" placeholder="e.g. RAD-100" /></div>
-    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-proj">Add project</button></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-proj">Add cost item</button></div>
   `, {
     onMount: (modal, close) => {
       modal.querySelector("#new-proj-code").value = "";
@@ -225,7 +234,7 @@ function addProjectModal(root, categoryId) {
       modal.querySelector("#save-proj").addEventListener("click", async () => {
         const name = modal.querySelector("#new-proj-name").value.trim();
         let code = modal.querySelector("#new-proj-code").value.trim();
-        if (!name) return toast("Enter a project name", "err");
+        if (!name) return toast("Enter a name", "err");
         if (!code) code = slugify(name).toUpperCase();
         if (Store.state.projects.some((p) => p.code === code)) return toast("That code is already in use", "err");
         await Store.upsertProject({ code, name, categoryId });
@@ -235,11 +244,40 @@ function addProjectModal(root, categoryId) {
   });
 }
 
+function notesModal(root, code) {
+  const proj = Store.state.projects.find((p) => p.code === code);
+  const existing = Store.state.planNotes.find((n) => n.fiscalYear === planFy && n.projectCode === code);
+  openModal(`
+    <h2>Note — ${proj ? proj.name : code} <span class="badge-soft">FY${planFy}</span></h2>
+    <p class="hint">Context for this cost item's plan — an assumption, a rationale, a flag for next review. Visible to anyone who opens this workbook.</p>
+    <div class="field" style="margin-top:8px"><textarea id="note-text" rows="5" style="width:100%;resize:vertical;font:inherit" placeholder="e.g. Includes the Q3 campaign refresh; pending sign-off from brand team.">${existing ? escapeHtml(existing.text) : ""}</textarea></div>
+    <div class="modal-actions">
+      ${existing ? `<button class="btn btn-danger" id="note-delete" style="margin-right:auto">Delete note</button>` : ""}
+      <button class="btn" data-close>Cancel</button>
+      <button class="btn btn-primary" id="note-save">Save note</button>
+    </div>
+  `, {
+    onMount: (modal, close) => {
+      modal.querySelector("[data-close]").addEventListener("click", close);
+      modal.querySelector("#note-save").addEventListener("click", async () => {
+        await Store.setPlanNote(planFy, code, modal.querySelector("#note-text").value);
+        close(); render(root);
+      });
+      modal.querySelector("#note-delete")?.addEventListener("click", async () => {
+        await Store.setPlanNote(planFy, code, "");
+        close(); render(root);
+      });
+    },
+  });
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
 function copyFromYearModal(root, yearList) {
   const sourceOptions = yearList.filter((y) => y !== planFy);
   openModal(`
     <h2>Copy budget from another year</h2>
-    <p class="hint">Copies the monthly split from the source year into FY${planFy} for every project, scaled by the growth % below. Existing FY${planFy} amounts will be overwritten.</p>
+    <p class="hint">Copies the monthly split from the source year into FY${planFy} for every cost item, scaled by the growth % below. Existing FY${planFy} amounts will be overwritten.</p>
     <div class="field"><label>Source year</label><select id="copy-source">${sourceOptions.map((y) => `<option value="${y}">FY${y}</option>`).join("")}</select></div>
     <div class="field" style="margin-top:8px"><label>Growth adjustment (%)</label><input type="number" id="copy-growth" value="0" /></div>
     <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="copy-run">Copy</button></div>
@@ -251,7 +289,7 @@ function copyFromYearModal(root, yearList) {
         const growth = 1 + (Number(modal.querySelector("#copy-growth").value) || 0) / 100;
         const lines = Store.state.budgetLines.filter((b) => b.fiscalYear === source).map((b) => ({
           id: `${planFy}:${b.projectCode}:${b.month}`, fiscalYear: planFy, projectCode: b.projectCode, month: b.month,
-          amount: Math.round(b.amount * growth * 100) / 100, notes: "",
+          amount: Math.round(b.amount * growth * 100) / 100,
         }));
         await Store.bulkSetBudgetLines(lines);
         toast(`Copied ${lines.length} line(s) from FY${source}`, "ok");

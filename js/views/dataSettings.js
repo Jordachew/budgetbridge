@@ -14,12 +14,12 @@ export function render(root) {
   root.innerHTML = `
     <div class="view-head">
       <h1>Data &amp; Settings</h1>
-      <p class="lead">Bring in your actuals export, manage the project/category list, and control how this tool's data is stored and shared.</p>
+      <p class="lead">Bring in your actuals export, manage the cost item / cost item group list, and control how this tool's data is stored and shared.</p>
     </div>
     <div class="tabbar">
       <button data-tab="import" class="${tab === "import" ? "active" : ""}">Import actuals</button>
       <button data-tab="workbook" class="${tab === "workbook" ? "active" : ""}">Share workbook</button>
-      <button data-tab="structure" class="${tab === "structure" ? "active" : ""}">Categories &amp; projects</button>
+      <button data-tab="structure" class="${tab === "structure" ? "active" : ""}">Cost item groups &amp; cost items</button>
       <button data-tab="storage" class="${tab === "storage" ? "active" : ""}">Storage &amp; danger zone</button>
     </div>
     <div id="tab-body"></div>
@@ -43,7 +43,7 @@ function renderImport(body) {
     </div>
     <div class="card" style="margin-bottom:16px">
       <h3>Budget planning template</h3>
-      <p class="hint">Optional: import an existing category / quarter budget grid (a sheet with <code>DESCRIPTION</code>, <code>Q1</code>–<code>Q4</code> columns) to seed the Planning view instead of typing it in from scratch.</p>
+      <p class="hint">Optional: import an existing cost item group / quarter budget grid (a sheet with <code>DESCRIPTION</code>, <code>Q1</code>–<code>Q4</code> columns) to seed the Planning view instead of typing it in from scratch.</p>
       <div class="dropzone" id="dz-template">Drop a budget template here, or click to choose one<br><span class="hint">.xlsx</span></div>
       <input type="file" id="file-template" accept=".xlsx,.xls" style="display:none" />
     </div>
@@ -98,7 +98,7 @@ async function handleActualsFile(body, file) {
     const wb = await readAnyWorkbook(file);
     const bbWorkbook = parseBudgetBridgeWorkbook(wb);
     if (bbWorkbook) {
-      openModal(`<h2>This looks like a BudgetBridge workbook</h2><p>Use <b>Share workbook → Import workbook</b> instead so categories, projects and budget lines come in correctly.</p><div class="modal-actions"><button class="btn btn-primary" data-close>OK</button></div>`, {
+      openModal(`<h2>This looks like a BudgetBridge workbook</h2><p>Use <b>Share workbook → Import workbook</b> instead so cost item groups, cost items and budget lines come in correctly.</p><div class="modal-actions"><button class="btn btn-primary" data-close>OK</button></div>`, {
         onMount: (m, close) => m.querySelector("[data-close]").addEventListener("click", close),
       });
       return;
@@ -131,7 +131,7 @@ function guessColumn(header, keywords) {
 
 function openMappingModal(found, file) {
   const guesses = {
-    project: guessColumn(found.header, ["project", "cost element", "code", "ci"]),
+    project: guessColumn(found.header, ["cost item", "project", "cost element", "code", "ci"]),
     amount: guessColumn(found.header, ["amount", "net", "actual", "spend"]),
     date: guessColumn(found.header, ["date", "period"]),
     type: guessColumn(found.header, ["type", "balance type"]),
@@ -159,7 +159,7 @@ function openMappingModal(found, file) {
       modal.querySelector("#do-import").addEventListener("click", async () => {
         const mapping = {};
         modal.querySelectorAll("[data-map]").forEach((sel) => { mapping[sel.dataset.map] = sel.value || null; });
-        if (!mapping.project || !mapping.amount || !mapping.date) return toast("Project, amount and date are required", "err");
+        if (!mapping.project || !mapping.amount || !mapping.date) return toast("Cost item, amount and date are required", "err");
         const rows = parseActualsWithMapping(found.header, found.rows, mapping);
         if (!rows.length) return toast("No usable rows found with that mapping", "err");
         await Store.importTransactions(rows, { filename: file.name, type: "mapped" });
@@ -175,7 +175,7 @@ async function handleTemplateFile(body, file) {
   try {
     const wb = await readAnyWorkbook(file);
     const sheets = inspectWorkbookForBudgetTemplate(wb);
-    if (!sheets.length) return toast("Couldn't find a category/quarter grid in that file", "err");
+    if (!sheets.length) return toast("Couldn't find a cost item group/quarter grid in that file", "err");
     openModal(`
       <h2>Import budget template</h2>
       <p class="hint">Found ${sheets.length} matching sheet(s). Choose a fiscal year to import into.</p>
@@ -205,13 +205,13 @@ async function handleTemplateFile(body, file) {
               const qmap = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]];
               ["q1", "q2", "q3", "q4"].forEach((q, qi) => {
                 const perMonth = Math.round(((cat[q] || 0) / 3) * 100) / 100;
-                qmap[qi].forEach((m) => lines.push({ id: `${fy}:${code}:${m + 1}`, fiscalYear: fy, projectCode: code, month: m + 1, amount: perMonth, notes: "" }));
+                qmap[qi].forEach((m) => lines.push({ id: `${fy}:${code}:${m + 1}`, fiscalYear: fy, projectCode: code, month: m + 1, amount: perMonth }));
               });
             }
           }
           lineCount = lines.length;
           await Store.bulkSetBudgetLines(lines);
-          toast(`Imported ${catCount} categor${catCount === 1 ? "y" : "ies"}, ${projCount} projects, FY${fy}`, "ok");
+          toast(`Imported ${catCount} cost item group${catCount === 1 ? "" : "s"}, ${projCount} cost item${projCount === 1 ? "" : "s"}, FY${fy}`, "ok");
           close();
           render(document.getElementById("view-root"));
         });
@@ -230,7 +230,7 @@ function renderWorkbook(body) {
     <div class="grid two-col">
       <div class="card">
         <h3>Export workbook</h3>
-        <p class="hint">Creates a single .xlsx with your categories, projects and budget plan (and, optionally, every transaction). Save it into a shared Google Drive / OneDrive / SharePoint folder so teammates can pick up your latest numbers with <b>Import workbook</b> below.</p>
+        <p class="hint">Creates a single .xlsx with your cost item groups, cost items and budget plan (and, optionally, every transaction). Save it into a shared Google Drive / OneDrive / SharePoint folder so teammates can pick up your latest numbers with <b>Import workbook</b> below.</p>
         <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="inc-tx" /> Include full transaction detail <span class="hint">(bigger file; needed for others to see drill-down detail)</span></label>
         <button class="btn btn-primary" id="export-wb">Export workbook (.xlsx)</button>
       </div>
@@ -248,7 +248,7 @@ function renderWorkbook(body) {
   `;
   body.querySelector("#export-wb").addEventListener("click", () => {
     const includeTx = body.querySelector("#inc-tx").checked;
-    const wb = buildWorkbook({ categories: s.categories, projects: s.projects, budgetLines: s.budgetLines, transactions: s.transactions, meta: { exportedAt: new Date().toISOString(), fiscalYear: s.fiscalYear } }, includeTx);
+    const wb = buildWorkbook({ categories: s.categories, projects: s.projects, budgetLines: s.budgetLines, transactions: s.transactions, planNotes: s.planNotes, meta: { exportedAt: new Date().toISOString(), fiscalYear: s.fiscalYear } }, includeTx);
     downloadWorkbook(wb, `budgetbridge-workbook-FY${s.fiscalYear}.xlsx`);
     toast("Workbook downloaded", "ok");
   });
@@ -274,11 +274,11 @@ function renderStructure(body) {
   body.innerHTML = `
     <div class="card" style="margin-bottom:16px">
       <div class="field-row" style="justify-content:space-between">
-        <h3 style="margin:0">Categories</h3>
-        <button class="btn btn-sm" id="add-cat">+ Add category</button>
+        <h3 style="margin:0">Cost item groups</h3>
+        <button class="btn btn-sm" id="add-cat">+ Add cost item group</button>
       </div>
       <div class="table-scroll" style="margin-top:10px"><table class="data-table">
-        <thead><tr><th>Name</th><th># Projects</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th># Cost items</th><th></th></tr></thead>
         <tbody>${s.categories.map((c) => `<tr>
           <td><input type="text" value="${escapeHtml(c.name)}" data-rename-cat="${c.id}" /></td>
           <td class="num">${s.projects.filter((p) => p.categoryId === c.id).length}</td>
@@ -287,9 +287,9 @@ function renderStructure(body) {
       </table></div>
     </div>
     <div class="card">
-      <h3>Projects</h3>
+      <h3>Cost items</h3>
       <div class="table-scroll" style="margin-top:10px"><table class="data-table">
-        <thead><tr><th>Name</th><th>Code</th><th>Category</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Code</th><th>Cost item group</th><th></th></tr></thead>
         <tbody>${s.projects.map((p) => `<tr>
           <td><input type="text" value="${escapeHtml(p.name)}" data-rename-proj="${p.code}" /></td>
           <td class="badge-soft">${p.code}</td>
@@ -300,7 +300,7 @@ function renderStructure(body) {
     </div>
   `;
   body.querySelector("#add-cat").addEventListener("click", () => {
-    const name = prompt("Category name?");
+    const name = prompt("Cost item group name?");
     if (name && name.trim()) Store.upsertCategory({ name: name.trim() }).then(() => render(document.getElementById("view-root")));
   });
   body.querySelectorAll("[data-rename-cat]").forEach((inp) => inp.addEventListener("change", async () => {
@@ -322,7 +322,7 @@ function renderStructure(body) {
     toast("Saved", "ok");
   }));
   body.querySelectorAll("[data-del-proj]").forEach((b) => b.addEventListener("click", async () => {
-    if (!confirm("Delete this project and its budget lines?")) return;
+    if (!confirm("Delete this cost item and its budget lines?")) return;
     await Store.deleteProject(b.dataset.delProj);
     render(document.getElementById("view-root"));
   }));
@@ -338,11 +338,10 @@ async function renderStorage(body) {
         <h3>What's in this browser right now</h3>
         <table class="data-table" style="margin-top:8px">
           <tbody>
-            <tr><td>Categories</td><td class="num">${s.categories.length}</td></tr>
-            <tr><td>Projects</td><td class="num">${s.projects.length}</td></tr>
+            <tr><td>Cost item groups</td><td class="num">${s.categories.length}</td></tr>
+            <tr><td>Cost items</td><td class="num">${s.projects.length}</td></tr>
             <tr><td>Budget line entries</td><td class="num">${s.budgetLines.length}</td></tr>
             <tr><td>Transaction lines</td><td class="num">${s.transactions.length.toLocaleString()}</td></tr>
-            <tr><td>Data source</td><td>${s.usingDemoData ? '<span class="badge-soft">Sample data</span>' : '<span class="badge-soft">Your imported data</span>'}</td></tr>
             ${usage ? `<tr><td>Estimated browser storage used</td><td class="num">${formatBytes(usage.usage || 0)}</td></tr>` : ""}
           </tbody>
         </table>
@@ -352,27 +351,17 @@ async function renderStorage(body) {
         <h3>Danger zone</h3>
         <div class="stack">
           <div>
-            <button class="btn" id="load-demo">Load sample data</button>
-            <p class="hint">Replaces everything currently loaded with a fabricated demo dataset — a fast way to explore the tool.</p>
-          </div>
-          <div>
             <button class="btn btn-danger" id="clear-tx">Clear transactions only</button>
-            <p class="hint">Removes imported actuals/encumbrances but keeps your categories, projects and budget plan.</p>
+            <p class="hint">Removes imported actuals/encumbrances but keeps your cost item groups, cost items and budget plan.</p>
           </div>
           <div>
             <button class="btn btn-danger" id="wipe-all">Erase everything</button>
-            <p class="hint">Deletes all categories, projects, budget lines and transactions from this browser. Cannot be undone — export a workbook first if you want a copy.</p>
+            <p class="hint">Deletes all cost item groups, cost items, budget lines and transactions from this browser. Cannot be undone — export a workbook first if you want a copy.</p>
           </div>
         </div>
       </div>
     </div>
   `;
-  body.querySelector("#load-demo").addEventListener("click", async () => {
-    if (s.categories.length && !confirm("Replace current data with sample data?")) return;
-    await Store.loadDemoData();
-    toast("Sample data loaded", "ok");
-    render(document.getElementById("view-root"));
-  });
   body.querySelector("#clear-tx").addEventListener("click", async () => {
     if (!confirm("Remove all imported transactions?")) return;
     await Store.clearTransactions();

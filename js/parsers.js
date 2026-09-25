@@ -64,7 +64,7 @@ function simpleHash(str) {
 const GL_HEADER_SIGNATURE = ["gl accounts", "accounted net", "gl period"];
 
 export const REQUIRED_FIELDS = [
-  { key: "project", label: "Project / cost element code", required: true },
+  { key: "project", label: "Cost item code", required: true },
   { key: "amount", label: "Amount", required: true },
   { key: "date", label: "Date or period", required: true },
   { key: "type", label: "Actual vs. encumbrance", required: false },
@@ -260,25 +260,28 @@ export function parseBudgetTemplateSheet(rawHeader, rows) {
 
 // ---------- Export / import BudgetBridge's own workbook ----------
 
-export function buildWorkbook({ categories, projects, budgetLines, meta, transactions }, includeTransactions) {
+export function buildWorkbook({ categories, projects, budgetLines, meta, transactions, planNotes }, includeTransactions) {
   const wb = window.XLSX.utils.book_new();
 
   const metaRows = [["key", "value"], ...Object.entries(meta || {}).map(([k, v]) => [k, JSON.stringify(v)])];
   window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(metaRows), "Meta");
 
   const catRows = [["id", "name", "sortOrder"], ...categories.map((c) => [c.id, c.name, c.sortOrder])];
-  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(catRows), "Categories");
+  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(catRows), "CostItemGroups");
 
-  const projRows = [["code", "name", "categoryId", "active"], ...projects.map((p) => [p.code, p.name, p.categoryId, p.active ? 1 : 0])];
-  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(projRows), "Projects");
+  const projRows = [["code", "name", "costItemGroupId", "active"], ...projects.map((p) => [p.code, p.name, p.categoryId, p.active ? 1 : 0])];
+  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(projRows), "CostItems");
 
-  const blRows = [["fiscalYear", "projectCode", "month", "amount", "notes"],
-    ...budgetLines.map((b) => [b.fiscalYear, b.projectCode, b.month, b.amount, b.notes || ""])];
+  const blRows = [["fiscalYear", "costItemCode", "month", "amount"],
+    ...budgetLines.map((b) => [b.fiscalYear, b.projectCode, b.month, b.amount])];
   window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(blRows), "BudgetLines");
 
+  const noteRows = [["fiscalYear", "costItemCode", "text"], ...(planNotes || []).map((n) => [n.fiscalYear, n.projectCode, n.text])];
+  window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(noteRows), "Notes");
+
   if (includeTransactions) {
-    const txRows = [["id", "project", "ferc", "year", "month", "balanceType", "docNo", "desc", "vendor", "amount", "postedDate", "batchId"],
-      ...transactions.map((t) => [t.id, t.project, t.ferc, t.year, t.month, t.balanceType, t.docNo, t.desc, t.vendor, t.amount, t.postedDate, t.batchId])];
+    const txRows = [["id", "costItemCode", "ferc", "year", "month", "balanceType", "docType", "docNo", "desc", "vendor", "amount", "postedDate", "batchId"],
+      ...transactions.map((t) => [t.id, t.project, t.ferc, t.year, t.month, t.balanceType, t.docType, t.docNo, t.desc, t.vendor, t.amount, t.postedDate, t.batchId])];
     window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(txRows), "Transactions");
   }
   return wb;
@@ -290,26 +293,29 @@ export function downloadWorkbook(wb, filename) {
 
 export function parseBudgetBridgeWorkbook(wb) {
   const sheetRows = (name) => (wb.Sheets[name] ? window.XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: null }) : []);
-  const hasOwnFormat = ["Categories", "Projects", "BudgetLines"].every((s) => wb.SheetNames.includes(s));
+  const hasOwnFormat = ["CostItemGroups", "CostItems", "BudgetLines"].every((s) => wb.SheetNames.includes(s));
   if (!hasOwnFormat) return null;
 
-  const categories = sheetRows("Categories").map((r) => ({ id: String(r.id), name: r.name, sortOrder: Number(r.sortOrder) || 0 }));
-  const projects = sheetRows("Projects").map((r) => ({ code: String(r.code), name: r.name, categoryId: r.categoryId != null ? String(r.categoryId) : null, active: r.active !== 0 }));
+  const categories = sheetRows("CostItemGroups").map((r) => ({ id: String(r.id), name: r.name, sortOrder: Number(r.sortOrder) || 0 }));
+  const projects = sheetRows("CostItems").map((r) => ({ code: String(r.code), name: r.name, categoryId: r.costItemGroupId != null ? String(r.costItemGroupId) : null, active: r.active !== 0 }));
   const budgetLines = sheetRows("BudgetLines").map((r) => ({
-    id: `${r.fiscalYear}:${r.projectCode}:${r.month}`,
-    fiscalYear: Number(r.fiscalYear), projectCode: String(r.projectCode), month: Number(r.month),
-    amount: Number(r.amount) || 0, notes: r.notes || "",
+    id: `${r.fiscalYear}:${r.costItemCode}:${r.month}`,
+    fiscalYear: Number(r.fiscalYear), projectCode: String(r.costItemCode), month: Number(r.month),
+    amount: Number(r.amount) || 0,
+  }));
+  const planNotes = sheetRows("Notes").filter((r) => r.text).map((r) => ({
+    id: `${r.fiscalYear}:${r.costItemCode}`, fiscalYear: Number(r.fiscalYear), projectCode: String(r.costItemCode), text: String(r.text),
   }));
   const metaRows = sheetRows("Meta");
   const meta = {};
   for (const r of metaRows) { try { meta[r.key] = JSON.parse(r.value); } catch { meta[r.key] = r.value; } }
   const transactions = sheetRows("Transactions").map((r) => ({
-    id: String(r.id), project: String(r.project), ferc: r.ferc != null ? String(r.ferc) : null,
-    year: Number(r.year), month: Number(r.month), balanceType: r.balanceType || "A",
+    id: String(r.id), project: String(r.costItemCode), ferc: r.ferc != null ? String(r.ferc) : null,
+    year: Number(r.year), month: Number(r.month), balanceType: r.balanceType || "A", docType: r.docType || null,
     docNo: r.docNo, desc: r.desc, vendor: r.vendor, amount: Number(r.amount) || 0,
     postedDate: r.postedDate, batchId: r.batchId || "imported-workbook",
   }));
-  return { categories, projects, budgetLines, meta, transactions };
+  return { categories, projects, budgetLines, meta, transactions, planNotes };
 }
 
 export { simpleHash };

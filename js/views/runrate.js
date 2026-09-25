@@ -27,7 +27,7 @@ export function render(root) {
   root.innerHTML = `
     <div class="view-head">
       <h1>Run Rate &amp; Forecast</h1>
-      <p class="lead">Projected year-end spend = year-to-date actual + (average monthly actual × remaining months). Compared against each project's FY${fy} budget to flag pace issues before year-end.</p>
+      <p class="lead">Projected year-end spend = year-to-date actual + (average monthly actual × remaining months). Compared against each cost item's FY${fy} budget to flag pace issues before year-end.</p>
     </div>
 
     <div class="filter-bar">
@@ -37,7 +37,7 @@ export function render(root) {
           <option value="">Entire portfolio</option>
           ${rows.map((cat) => `
             <optgroup label="${cat.name}">
-              <option value="cat:${cat.id}" ${focus === "cat:" + cat.id ? "selected" : ""}>${cat.name} (category total)</option>
+              <option value="cat:${cat.id}" ${focus === "cat:" + cat.id ? "selected" : ""}>${cat.name} (cost item group total)</option>
               ${cat.projects.map((p) => `<option value="proj:${p.code}" ${focus === "proj:" + p.code ? "selected" : ""}>${p.name}</option>`).join("")}
             </optgroup>`).join("")}
         </select>
@@ -62,7 +62,7 @@ export function render(root) {
     <div class="table-scroll">
       <table class="data-table">
         <thead><tr>
-          <th>Category / Project</th><th>Months elapsed</th><th>YTD actual</th><th>Avg / month</th>
+          <th>Cost Item Group / Cost Item</th><th>Months elapsed</th><th>YTD actual</th><th>Avg / month</th>
           <th>Projected annual</th><th>FY${fy} budget</th><th>Projected variance</th><th>Status</th>
         </tr></thead>
         <tbody>

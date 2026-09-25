@@ -14,10 +14,6 @@ export function render(root) {
 
   if (!s.categories.length) {
     root.innerHTML = emptyState();
-    root.querySelector("#load-demo-btn")?.addEventListener("click", async () => {
-      await Store.loadDemoData();
-      render(root);
-    });
     root.querySelector("#go-data-btn")?.addEventListener("click", () => Store.setRoute("data"));
     return;
   }
@@ -55,7 +51,7 @@ export function render(root) {
       </div>
       <div class="card chart-card">
         <div class="chart-head">
-          <div><h3>Categories to watch</h3><div class="chart-cap">Ranked by projected year-end variance</div></div>
+          <div><h3>Cost item groups to watch</h3><div class="chart-cap">Ranked by projected year-end variance</div></div>
         </div>
         ${watchList(rows)}
       </div>
@@ -63,7 +59,7 @@ export function render(root) {
 
     <div class="card chart-card" style="margin-top:14px">
       <div class="chart-head">
-        <div><h3>Budget vs. actual vs. encumbered, by category</h3><div class="chart-cap">FY${fy} full-year budget compared to spend to date</div></div>
+        <div><h3>Budget vs. actual vs. encumbered, by cost item group</h3><div class="chart-cap">FY${fy} full-year budget compared to spend to date</div></div>
         <button class="table-toggle" data-action="goto-comparison">View as table →</button>
       </div>
       <div class="chart-wrap" style="height:320px"><canvas id="chart-category"></canvas></div>
@@ -138,11 +134,10 @@ function emptyState() {
     <div class="big-ic">${icon("dashboard", { size: 44, strokeWidth: 1.6 })}</div>
     <h3>No data yet</h3>
     ${hasOrphanTransactions
-      ? `<p>${s.transactions.length.toLocaleString()} transaction line(s) are imported, but there are no categories or projects to group them under yet. Add matching project codes in <b>Data &amp; Settings → Categories &amp; projects</b> (or import a budget template) so they show up here.</p>`
-      : `<p>Load the sample dataset to explore the tool, or head to <b>Data &amp; Settings</b> to import your own budget and actuals.</p>`}
+      ? `<p>${s.transactions.length.toLocaleString()} transaction line(s) are imported, but there are no cost item groups or cost items to group them under yet. Add matching cost item codes in <b>Data &amp; Settings → Cost Item Groups &amp; Cost Items</b> (or import a budget template) so they show up here.</p>`
+      : `<p>Head to <b>Data &amp; Settings</b> to import your budget and actuals.</p>`}
     <div class="field-row" style="justify-content:center;margin-top:14px">
-      <button class="btn btn-primary" id="load-demo-btn">Load sample data</button>
-      <button class="btn" id="go-data-btn">Go to Data &amp; Settings</button>
+      <button class="btn btn-primary" id="go-data-btn">Go to Data &amp; Settings</button>
     </div>
   </div>`;
 }
