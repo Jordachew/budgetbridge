@@ -137,7 +137,8 @@ function openMappingModal(found, file) {
     type: guessColumn(found.header, ["type", "balance type"]),
     vendor: guessColumn(found.header, ["vendor", "payee", "supplier"]),
     description: guessColumn(found.header, ["desc", "memo", "narrative"]),
-    docNo: guessColumn(found.header, ["doc", "invoice", "reference"]),
+    docNo: guessColumn(found.header, ["doc no", "invoice no", "invoice number", "reference", "doc #"]),
+    docType: guessColumn(found.header, ["doc type", "document type", "sub doc type", "transaction type"]),
     category: guessColumn(found.header, ["ferc", "natural account", "expense category"]),
   };
   const optionsHtml = (selected) => `<option value="">—</option>` + found.header.filter(Boolean).map((h) => `<option value="${h}" ${h === selected ? "selected" : ""}>${h}</option>`).join("");

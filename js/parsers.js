@@ -71,6 +71,7 @@ export const REQUIRED_FIELDS = [
   { key: "vendor", label: "Vendor / payee", required: false },
   { key: "description", label: "Description", required: false },
   { key: "docNo", label: "Document / invoice number", required: false },
+  { key: "docType", label: "Document type (e.g. Invoice, PO, Credit Memo)", required: false },
   { key: "category", label: "Expense category code (e.g. FERC/GL natural account)", required: false },
 ];
 
@@ -164,6 +165,7 @@ export function parseActualsWithMapping(header, rows, mapping, batchId) {
   const iVendor = mapping.vendor ? idx("vendor") : -1;
   const iDesc = mapping.description ? idx("description") : -1;
   const iDocNo = mapping.docNo ? idx("docNo") : -1;
+  const iDocType = mapping.docType ? idx("docType") : -1;
   const iCategory = mapping.category ? idx("category") : -1;
 
   const out = [];
@@ -190,7 +192,7 @@ export function parseActualsWithMapping(header, rows, mapping, batchId) {
       id: key, project,
       ferc: iCategory >= 0 ? (row[iCategory] != null ? String(row[iCategory]) : null) : null,
       year, month, balanceType,
-      docType: null,
+      docType: iDocType >= 0 && row[iDocType] != null ? String(row[iDocType]) : null,
       docNo: docNo || null,
       desc: iDesc >= 0 ? row[iDesc] : null,
       vendor: iVendor >= 0 ? row[iVendor] : null,

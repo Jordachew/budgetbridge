@@ -1,6 +1,6 @@
 import { Store } from "../store.js";
-import { aggregateActuals, budgetByProject, computeRunRate, fmtMoney, fmtPct, MONTH_NAMES } from "../calc.js";
-import { statusChip, toCsv, downloadTextFile, captureFocus, restoreFocus } from "../ui.js";
+import { aggregateActuals, budgetByProject, computeRunRate, fmtMoney, fmtPct, friendlyDocType, MONTH_NAMES } from "../calc.js";
+import { statusChip, toCsv, downloadTextFile, captureFocus, restoreFocus, kpiCard } from "../ui.js";
 import { budgetActualBarChart } from "../charts.js";
 
 let txSearch = "";
@@ -9,6 +9,7 @@ let txPage = 1;
 const PAGE_SIZE = 50;
 let vendorFilter = "";
 let typeFilter = "";
+let docTypeFilter = "";
 
 export function render(root) {
   const s = Store.state;
@@ -94,9 +95,11 @@ function renderProject(root, s, categoryId, projectCode) {
 
   let txs = s.transactions.filter((t) => t.project === projectCode && t.year === fy);
   const vendors = [...new Set(txs.map((t) => t.vendor).filter(Boolean))].sort();
+  const docTypes = [...new Set(txs.map((t) => friendlyDocType(t.docType)))].sort();
 
   if (vendorFilter) txs = txs.filter((t) => t.vendor === vendorFilter);
   if (typeFilter) txs = txs.filter((t) => t.balanceType === typeFilter);
+  if (docTypeFilter) txs = txs.filter((t) => friendlyDocType(t.docType) === docTypeFilter);
   if (txSearch.trim()) {
     const q = txSearch.trim().toLowerCase();
     txs = txs.filter((t) => [t.desc, t.vendor, t.docNo].some((v) => v && String(v).toLowerCase().includes(q)));
@@ -115,11 +118,11 @@ function renderProject(root, s, categoryId, projectCode) {
     ${crumbs([{ label: "All categories", action: "root" }, { label: cat ? cat.name : "", action: "cat" }, { label: proj ? proj.name : "" }])}
 
     <div class="grid kpi-row">
-      <div class="card kpi"><div class="kpi-label">FY${fy} budget</div><div class="kpi-value">$${fmtMoney(b.total, { compact: true })}</div></div>
-      <div class="card kpi"><div class="kpi-label">Actual</div><div class="kpi-value">$${fmtMoney(a.actual, { compact: true })}</div></div>
-      <div class="card kpi"><div class="kpi-label">Encumbered</div><div class="kpi-value">$${fmtMoney(a.encumbrance, { compact: true })}</div></div>
-      <div class="card kpi"><div class="kpi-label">Balance</div><div class="kpi-value">$${fmtMoney(b.total - a.actual - a.encumbrance, { compact: true })}</div></div>
-      <div class="card kpi"><div class="kpi-label">Projected year-end</div><div class="kpi-value">$${fmtMoney(rr.projectedAnnual, { compact: true })}</div><div style="margin-top:4px">${statusChip(rr.status)}</div></div>
+      ${kpiCard({ label: `FY${fy} budget`, value: "$" + fmtMoney(b.total, { compact: true }), icon: "layers", iconColor: "var(--series-1)" })}
+      ${kpiCard({ label: "Actual", value: "$" + fmtMoney(a.actual, { compact: true }), icon: "trend", iconColor: "var(--series-3)" })}
+      ${kpiCard({ label: "Encumbered", value: "$" + fmtMoney(a.encumbrance, { compact: true }), icon: "inbox", iconColor: "var(--series-2)" })}
+      ${kpiCard({ label: "Balance", value: "$" + fmtMoney(b.total - a.actual - a.encumbrance, { compact: true }), icon: "scale", iconColor: "var(--series-6)" })}
+      ${kpiCard({ label: "Projected year-end", value: "$" + fmtMoney(rr.projectedAnnual, { compact: true }), sub: statusChip(rr.status), icon: "chart" })}
     </div>
 
     <div class="card chart-card">
@@ -134,7 +137,10 @@ function renderProject(root, s, categoryId, projectCode) {
       <div class="field"><label>Vendor</label>
         <select id="tx-vendor"><option value="">All vendors</option>${vendors.map((v) => `<option ${vendorFilter === v ? "selected" : ""}>${v}</option>`).join("")}</select>
       </div>
-      <div class="field"><label>Type</label>
+      <div class="field"><label>Document type</label>
+        <select id="tx-doctype"><option value="">All document types</option>${docTypes.map((d) => `<option ${docTypeFilter === d ? "selected" : ""}>${d}</option>`).join("")}</select>
+      </div>
+      <div class="field"><label>Basis</label>
         <select id="tx-type"><option value="">All</option><option value="A" ${typeFilter === "A" ? "selected" : ""}>Actual</option><option value="E" ${typeFilter === "E" ? "selected" : ""}>Encumbrance</option></select>
       </div>
       <div class="field-row" style="margin-left:auto"><button class="btn btn-sm" id="tx-export">Export CSV</button></div>
@@ -146,7 +152,8 @@ function renderProject(root, s, categoryId, projectCode) {
           <th data-sort="vendor" class="${txSort.key === "vendor" ? "sorted" : ""}">Vendor</th>
           <th data-sort="desc" class="${txSort.key === "desc" ? "sorted" : ""}">Description</th>
           <th data-sort="docNo" class="${txSort.key === "docNo" ? "sorted" : ""}">Doc #</th>
-          <th>Type</th>
+          <th>Document type</th>
+          <th>Basis</th>
           <th data-sort="amount" class="${txSort.key === "amount" ? "sorted" : ""}">Amount</th>
         </tr></thead>
         <tbody>
@@ -155,9 +162,10 @@ function renderProject(root, s, categoryId, projectCode) {
             <td>${t.vendor || "—"}</td>
             <td>${t.desc || "—"}</td>
             <td>${t.docNo || "—"}</td>
+            <td><span class="badge-soft">${friendlyDocType(t.docType)}</span></td>
             <td><span class="badge-soft">${t.balanceType === "E" ? "Encumbrance" : "Actual"}</span></td>
             <td class="num">$${fmtMoney(t.amount)}</td>
-          </tr>`).join("") || `<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No transactions match these filters.</td></tr>`}
+          </tr>`).join("") || `<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">No transactions match these filters.</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -174,9 +182,10 @@ function renderProject(root, s, categoryId, projectCode) {
 
   root.querySelector("#tx-search").addEventListener("input", (e) => { txSearch = e.target.value; txPage = 1; const snap = captureFocus(root); render(root); restoreFocus(snap); });
   root.querySelector("#tx-vendor").addEventListener("change", (e) => { vendorFilter = e.target.value; txPage = 1; render(root); });
+  root.querySelector("#tx-doctype").addEventListener("change", (e) => { docTypeFilter = e.target.value; txPage = 1; render(root); });
   root.querySelector("#tx-type").addEventListener("change", (e) => { typeFilter = e.target.value; txPage = 1; render(root); });
   root.querySelector("#tx-export").addEventListener("click", () => {
-    const csv = toCsv(["Date", "Vendor", "Description", "Doc No", "Type", "Amount"], txs.map((t) => [t.postedDate, t.vendor, t.desc, t.docNo, t.balanceType === "E" ? "Encumbrance" : "Actual", t.amount]));
+    const csv = toCsv(["Date", "Vendor", "Description", "Doc No", "Document Type", "Basis", "Amount"], txs.map((t) => [t.postedDate, t.vendor, t.desc, t.docNo, friendlyDocType(t.docType), t.balanceType === "E" ? "Encumbrance" : "Actual", t.amount]));
     downloadTextFile(`${projectCode}-transactions-FY${fy}.csv`, csv);
   });
   root.querySelectorAll("th[data-sort]").forEach((th) => th.addEventListener("click", () => {

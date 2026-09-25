@@ -2,6 +2,7 @@
 // BudgetBridge — small shared UI helpers (toasts, modals, chips)
 // ===========================================================
 import { fmtMoney, fmtPct, STATUS_LABEL } from "./calc.js";
+import { icon, STATUS_ICON } from "./icons.js";
 
 export function toast(message, kind = "") {
   const host = document.getElementById("toast-host");
@@ -39,7 +40,7 @@ export function el(tag, attrs = {}, children = []) {
 }
 
 export function statusChip(status) {
-  return `<span class="chip ${status}"><span class="dot"></span>${STATUS_LABEL[status] || status}</span>`;
+  return `<span class="chip ${status}">${icon(STATUS_ICON[status] || "minusCircle", { size: 12, strokeWidth: 2.4 })}${STATUS_LABEL[status] || status}</span>`;
 }
 
 export function meterBar(pct, status) {
@@ -49,14 +50,30 @@ export function meterBar(pct, status) {
   return `<div class="meter" title="${pct == null ? "No budget set" : fmtPct(pct)}"><span style="width:${width}%; background:${colorVar}"></span></div>`;
 }
 
-export function kpiCard({ label, value, sub, deltaText, deltaGood }) {
+export function kpiCard({ label, value, sub, deltaText, deltaGood, icon: iconName, iconColor = "var(--accent)", sparkline }) {
   return `
   <div class="card kpi">
+    ${iconName ? `<div class="kpi-icon" style="background:color-mix(in srgb, ${iconColor} 16%, transparent); color:${iconColor}">${icon(iconName, { size: 16, strokeWidth: 2.2 })}</div>` : ""}
     <div class="kpi-label">${label}</div>
     <div class="kpi-value">${value}</div>
     ${sub ? `<div class="kpi-sub">${sub}</div>` : ""}
     ${deltaText ? `<div class="kpi-delta ${deltaGood ? "delta-up good" : "delta-up bad"}">${deltaText}</div>` : ""}
+    ${sparkline && sparkline.length > 1 ? `<div class="kpi-spark">${sparklineSvg(sparkline, iconColor)}</div>` : ""}
   </div>`;
+}
+
+/** A tiny 12-point trend line for a KPI card — no chart library needed. */
+export function sparklineSvg(values, color = "var(--accent)", w = 64, h = 22) {
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = max - min || 1;
+  const step = w / (values.length - 1);
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(h - ((v - min) / span) * (h - 4) - 2).toFixed(1)}`).join(" ");
+  const lastX = ((values.length - 1) * step).toFixed(1);
+  const lastY = (h - ((values[values.length - 1] - min) / span) * (h - 4) - 2).toFixed(1);
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="none">
+    <polyline points="${pts}" stroke="${color}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+    <circle cx="${lastX}" cy="${lastY}" r="2.2" fill="${color}"/>
+  </svg>`;
 }
 
 export function moneyCell(n, opts) { return fmtMoney(n, opts); }

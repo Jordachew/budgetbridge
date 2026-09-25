@@ -8,14 +8,15 @@ import * as planning from "./views/planning.js";
 import * as dataSettings from "./views/dataSettings.js";
 import { destroyAll } from "./charts.js";
 import { captureFocus, restoreFocus } from "./ui.js";
+import { icon } from "./icons.js";
 
 const VIEWS = {
-  dashboard: { mod: dashboard, label: "Dashboard", icon: "◱", group: "Overview" },
-  comparison: { mod: comparison, label: "Budget vs. Actual", icon: "≣", group: "Overview" },
-  runrate: { mod: runrate, label: "Run Rate & Forecast", icon: "⤴", group: "Overview" },
-  drilldown: { mod: drilldown, label: "Drill-Down", icon: "⌕", group: "Explore" },
-  planning: { mod: planning, label: "Planning", icon: "✎", group: "Explore" },
-  data: { mod: dataSettings, label: "Data & Settings", icon: "⚙", group: "Manage" },
+  dashboard: { mod: dashboard, label: "Dashboard", icon: "dashboard", group: "Overview" },
+  comparison: { mod: comparison, label: "Budget vs. Actual", icon: "scale", group: "Overview" },
+  runrate: { mod: runrate, label: "Run Rate & Forecast", icon: "trend", group: "Overview" },
+  drilldown: { mod: drilldown, label: "Drill-Down", icon: "search", group: "Explore" },
+  planning: { mod: planning, label: "Planning", icon: "edit", group: "Explore" },
+  data: { mod: dataSettings, label: "Data & Settings", icon: "settings", group: "Manage" },
 };
 
 function renderShell() {
@@ -23,7 +24,7 @@ function renderShell() {
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark"></div>
+          <div class="brand-mark">${icon("chart", { size: 18, strokeWidth: 2.4 })}</div>
           <div class="brand-text"><div class="name">BudgetBridge</div><div class="tag">Marketing budget &amp; planning</div></div>
         </div>
         <nav class="nav" id="nav"></nav>
@@ -44,7 +45,7 @@ function renderNav() {
   let html = "";
   for (const [key, v] of Object.entries(VIEWS)) {
     if (v.group !== lastGroup) { html += `<div class="nav-section-label">${v.group}</div>`; lastGroup = v.group; }
-    html += `<button class="nav-item ${Store.state.route === key ? "active" : ""}" data-route="${key}"><span class="ic">${v.icon}</span>${v.label}</button>`;
+    html += `<button class="nav-item ${Store.state.route === key ? "active" : ""}" data-route="${key}"><span class="ic">${icon(v.icon, { size: 17, strokeWidth: 2 })}</span>${v.label}</button>`;
   }
   nav.innerHTML = html;
   nav.querySelectorAll("[data-route]").forEach((b) => b.addEventListener("click", () => Store.setRoute(b.getAttribute("data-route"))));

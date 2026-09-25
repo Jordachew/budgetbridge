@@ -18,6 +18,34 @@ export function fmtMoney(n, { compact = false, currency = "" } = {}) {
   return sign + currency + abs.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
+/**
+ * Maps a GL/ERP "sub doc type" code (e.g. AP_INV_STDINV, PO_PO_STD) to a
+ * label a marketing-team reviewer recognizes — invoice, PO, credit memo,
+ * journal entry — so the drill-down reads like the paperwork it represents,
+ * not a system code. Falls back to prettifying whatever code is given, so
+ * an export from a different ERP still shows something reasonable.
+ */
+const DOC_TYPE_MAP = [
+  [/^AP_INV_CDTINV/i, "Credit Memo"],
+  [/^AP_INV/i, "Invoice"],
+  [/^PO_REQ/i, "Requisition"],
+  [/^PO_/i, "Purchase Order"],
+  [/^GL_JRNL_PAYROLL/i, "Payroll Journal"],
+  [/^GL_JRNL/i, "Journal Entry"],
+  [/^FA_DEPR/i, "Depreciation"],
+  [/^EXP_/i, "Expense Report"],
+];
+export function friendlyDocType(raw) {
+  if (!raw) return "Other";
+  const hit = DOC_TYPE_MAP.find(([re]) => re.test(raw));
+  if (hit) return hit[1];
+  if (/inv/i.test(raw)) return "Invoice";
+  if (/\bpo\b/i.test(raw)) return "Purchase Order";
+  if (/jrnl|journal/i.test(raw)) return "Journal Entry";
+  if (/depr/i.test(raw)) return "Depreciation";
+  return String(raw).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export function fmtPct(n, digits = 0) {
   if (n == null || isNaN(n)) return "—";
   return (n * 100).toFixed(digits) + "%";

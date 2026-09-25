@@ -119,11 +119,16 @@ export function generateDemoData({ fiscalYear = 2026, asOfMonth = 9 } = {}) {
           const amount = isLast ? remaining : remaining * (0.2 + rng() * 0.4);
           remaining -= amount;
           txSeq++;
+          // mostly invoices, with the occasional credit memo or manual journal
+          // so the drill-down's document-type filter has real variety
+          const roll = rng();
+          const docType = roll > 0.93 ? "GL_JRNL_MAN" : roll > 0.88 ? "AP_INV_CDTINV" : "AP_INV_STDINV";
+          const docPrefix = docType === "GL_JRNL_MAN" ? "JE" : docType === "AP_INV_CDTINV" ? "CM" : "INV";
           transactions.push({
             id: `demo-${p.code}-${fiscalYear}-${m}-${li}`,
             project: p.code, ferc: null,
             year: fiscalYear, month: m, balanceType: "A",
-            docType: "DEMO", docNo: `DEMO-${String(txSeq).padStart(5, "0")}`,
+            docType, docNo: `${docPrefix}-${String(txSeq).padStart(5, "0")}`,
             desc: DESCRIPTIONS[Math.floor(rng() * DESCRIPTIONS.length)],
             vendor: VENDORS[Math.floor(rng() * VENDORS.length)],
             amount: Math.round(Math.max(amount, 0) * 100) / 100,
@@ -139,7 +144,7 @@ export function generateDemoData({ fiscalYear = 2026, asOfMonth = 9 } = {}) {
             id: `demo-${p.code}-${fiscalYear}-${m}-enc`,
             project: p.code, ferc: null,
             year: fiscalYear, month: m, balanceType: "E",
-            docType: "DEMO-PO", docNo: `DEMO-PO-${String(txSeq).padStart(5, "0")}`,
+            docType: "PO_PO_STD", docNo: `PO-${String(txSeq).padStart(5, "0")}`,
             desc: "Open purchase order",
             vendor: VENDORS[Math.floor(rng() * VENDORS.length)],
             amount: Math.round(encAmount * 100) / 100,

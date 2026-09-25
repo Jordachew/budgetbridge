@@ -2,6 +2,7 @@ import { Store } from "../store.js";
 import { aggregateActuals, budgetByProject, buildComparisonRows, grandTotal, fmtMoney, fmtPct, MONTH_NAMES, STATUS_LABEL } from "../calc.js";
 import { statusChip, meterBar, kpiCard } from "../ui.js";
 import { budgetActualBarChart, monthlyTrendChart, rankedBarChart, statusColor } from "../charts.js";
+import { icon } from "../icons.js";
 
 export function render(root) {
   const s = Store.state;
@@ -25,6 +26,11 @@ export function render(root) {
   const pctUsed = total.budget > 0 ? total.committed / total.budget : null;
   const paceExpected = asOf / 12;
 
+  const monthlyActualToDate = total.byMonth.actual.slice(0, asOf);
+  const cumCommittedToDate = [];
+  { let run = 0; for (let i = 0; i < asOf; i++) { run += (total.byMonth.actual[i] || 0) + (total.byMonth.encumbrance[i] || 0); cumCommittedToDate.push(run); } }
+  const projectedStatusColor = { good: "var(--status-good)", warning: "var(--status-warning)", serious: "var(--status-serious)", critical: "var(--status-critical)", unbudgeted: "var(--baseline)" }[rr.status];
+
   root.innerHTML = `
     <div class="view-head">
       <h1>Dashboard</h1>
@@ -32,11 +38,11 @@ export function render(root) {
     </div>
 
     <div class="grid kpi-row">
-      ${kpiCard({ label: "Total budget", value: "$" + fmtMoney(total.budget, { compact: true }), sub: `FY${fy} plan` })}
-      ${kpiCard({ label: "Actual spend (YTD)", value: "$" + fmtMoney(total.actual, { compact: true }), sub: `Through ${MONTH_NAMES[asOf - 1]} · ${fmtPct(paceExpected)} of year elapsed` })}
-      ${kpiCard({ label: "Encumbered / committed", value: "$" + fmtMoney(total.encumbrance, { compact: true }), sub: "Open POs & obligations" })}
-      ${kpiCard({ label: "Remaining balance", value: "$" + fmtMoney(total.balance, { compact: true }), sub: pctUsed != null ? `${fmtPct(pctUsed)} of budget committed` : "No budget set" })}
-      ${kpiCard({ label: "Projected year-end spend", value: "$" + fmtMoney(rr.projectedAnnual, { compact: true }), sub: rr.hasBudget ? `${rr.projectedVariancePct >= 0 ? "+" : ""}${fmtPct(rr.projectedVariancePct)} vs budget at current run-rate` : "No budget set", deltaText: rr.hasBudget ? STATUS_LABEL[rr.status] : null, deltaGood: rr.status === "good" })}
+      ${kpiCard({ label: "Total budget", value: "$" + fmtMoney(total.budget, { compact: true }), sub: `FY${fy} plan`, icon: "layers", iconColor: "var(--series-1)" })}
+      ${kpiCard({ label: "Actual spend (YTD)", value: "$" + fmtMoney(total.actual, { compact: true }), sub: `Through ${MONTH_NAMES[asOf - 1]} · ${fmtPct(paceExpected)} of year elapsed`, icon: "trend", iconColor: "var(--series-3)", sparkline: monthlyActualToDate.length > 1 ? monthlyActualToDate : null })}
+      ${kpiCard({ label: "Encumbered / committed", value: "$" + fmtMoney(total.encumbrance, { compact: true }), sub: "Open POs & obligations", icon: "inbox", iconColor: "var(--series-2)" })}
+      ${kpiCard({ label: "Remaining balance", value: "$" + fmtMoney(total.balance, { compact: true }), sub: pctUsed != null ? `${fmtPct(pctUsed)} of budget committed` : "No budget set", icon: "scale", iconColor: "var(--series-6)" })}
+      ${kpiCard({ label: "Projected year-end spend", value: "$" + fmtMoney(rr.projectedAnnual, { compact: true }), sub: rr.hasBudget ? `${rr.projectedVariancePct >= 0 ? "+" : ""}${fmtPct(rr.projectedVariancePct)} vs budget at current run-rate` : "No budget set", deltaText: rr.hasBudget ? STATUS_LABEL[rr.status] : null, deltaGood: rr.status === "good", icon: "chart", iconColor: projectedStatusColor, sparkline: cumCommittedToDate.length > 1 ? cumCommittedToDate : null })}
     </div>
 
     <div class="grid two-col">
@@ -129,7 +135,7 @@ function emptyState() {
   return `
   <div class="view-head"><h1>Dashboard</h1></div>
   <div class="card empty-state">
-    <div class="big-ic">📊</div>
+    <div class="big-ic">${icon("dashboard", { size: 44, strokeWidth: 1.6 })}</div>
     <h3>No data yet</h3>
     ${hasOrphanTransactions
       ? `<p>${s.transactions.length.toLocaleString()} transaction line(s) are imported, but there are no categories or projects to group them under yet. Add matching project codes in <b>Data &amp; Settings → Categories &amp; projects</b> (or import a budget template) so they show up here.</p>`

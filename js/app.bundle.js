@@ -243,6 +243,9 @@
             const amount = isLast ? remaining : remaining * (0.2 + rng() * 0.4);
             remaining -= amount;
             txSeq++;
+            const roll = rng();
+            const docType = roll > 0.93 ? "GL_JRNL_MAN" : roll > 0.88 ? "AP_INV_CDTINV" : "AP_INV_STDINV";
+            const docPrefix = docType === "GL_JRNL_MAN" ? "JE" : docType === "AP_INV_CDTINV" ? "CM" : "INV";
             transactions.push({
               id: `demo-${p.code}-${fiscalYear}-${m}-${li}`,
               project: p.code,
@@ -250,8 +253,8 @@
               year: fiscalYear,
               month: m,
               balanceType: "A",
-              docType: "DEMO",
-              docNo: `DEMO-${String(txSeq).padStart(5, "0")}`,
+              docType,
+              docNo: `${docPrefix}-${String(txSeq).padStart(5, "0")}`,
               desc: DESCRIPTIONS[Math.floor(rng() * DESCRIPTIONS.length)],
               vendor: VENDORS[Math.floor(rng() * VENDORS.length)],
               amount: Math.round(Math.max(amount, 0) * 100) / 100,
@@ -269,8 +272,8 @@
               year: fiscalYear,
               month: m,
               balanceType: "E",
-              docType: "DEMO-PO",
-              docNo: `DEMO-PO-${String(txSeq).padStart(5, "0")}`,
+              docType: "PO_PO_STD",
+              docNo: `PO-${String(txSeq).padStart(5, "0")}`,
               desc: "Open purchase order",
               vendor: VENDORS[Math.floor(rng() * VENDORS.length)],
               amount: Math.round(encAmount * 100) / 100,
@@ -298,6 +301,26 @@
       return sign + currency + abs.toFixed(0);
     }
     return sign + currency + abs.toLocaleString(void 0, { maximumFractionDigits: 0 });
+  }
+  var DOC_TYPE_MAP = [
+    [/^AP_INV_CDTINV/i, "Credit Memo"],
+    [/^AP_INV/i, "Invoice"],
+    [/^PO_REQ/i, "Requisition"],
+    [/^PO_/i, "Purchase Order"],
+    [/^GL_JRNL_PAYROLL/i, "Payroll Journal"],
+    [/^GL_JRNL/i, "Journal Entry"],
+    [/^FA_DEPR/i, "Depreciation"],
+    [/^EXP_/i, "Expense Report"]
+  ];
+  function friendlyDocType(raw) {
+    if (!raw) return "Other";
+    const hit = DOC_TYPE_MAP.find(([re]) => re.test(raw));
+    if (hit) return hit[1];
+    if (/inv/i.test(raw)) return "Invoice";
+    if (/\bpo\b/i.test(raw)) return "Purchase Order";
+    if (/jrnl|journal/i.test(raw)) return "Journal Entry";
+    if (/depr/i.test(raw)) return "Depreciation";
+    return String(raw).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   }
   function fmtPct(n, digits = 0) {
     if (n == null || isNaN(n)) return "\u2014";
@@ -670,6 +693,39 @@
     render: () => render
   });
 
+  // js/icons.js
+  var ICONS = {
+    dashboard: '<path d="M4 13h6V4H4v9Zm10 7h6V4h-6v16ZM4 20h6v-4H4v4Z"/>',
+    scale: '<path d="M12 3v18M7 7l-4 8a4 4 0 0 0 8 0l-4-8Zm10 0l-4 8a4 4 0 0 0 8 0l-4-8ZM5 7h14"/>',
+    trend: '<path d="M3 17l6-6 4 4 8-8M21 7v6M21 7h-6"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+    edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/>',
+    chart: '<path d="M4 19V9M10 19V4M16 19v-7M4 19h16"/>',
+    chevronRight: '<path d="M9 18l6-6-6-6"/>',
+    chevronDown: '<path d="M6 9l6 6 6-6"/>',
+    checkCircle: '<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.2 2.2L16 9.5"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+    alertTriangle: '<path d="M10.6 3.9 2.4 18a1.6 1.6 0 0 0 1.4 2.4h16.4a1.6 1.6 0 0 0 1.4-2.4L13.4 3.9a1.6 1.6 0 0 0-2.8 0Z"/><path d="M12 9v4"/><path d="M12 16.5h.01"/>',
+    alertOctagon: '<path d="M7.9 3h8.2L21 7.9v8.2L16.1 21H7.9L3 16.1V7.9L7.9 3Z"/><path d="M12 8v5"/><path d="M12 15.5h.01"/>',
+    minusCircle: '<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',
+    inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v7a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-7l3.5-7Z"/>',
+    upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
+    download: '<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 19h16"/>',
+    layers: '<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>'
+  };
+  function icon(name, { size = 18, strokeWidth = 2 } = {}) {
+    const body = ICONS[name] || ICONS.chart;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+  }
+  var STATUS_ICON = {
+    good: "checkCircle",
+    warning: "clock",
+    serious: "alertTriangle",
+    critical: "alertOctagon",
+    unbudgeted: "minusCircle"
+  };
+
   // js/ui.js
   function toast(message, kind = "") {
     const host = document.getElementById("toast-host");
@@ -694,7 +750,7 @@
     return close;
   }
   function statusChip(status) {
-    return `<span class="chip ${status}"><span class="dot"></span>${STATUS_LABEL[status] || status}</span>`;
+    return `<span class="chip ${status}">${icon(STATUS_ICON[status] || "minusCircle", { size: 12, strokeWidth: 2.4 })}${STATUS_LABEL[status] || status}</span>`;
   }
   function meterBar(pct, status) {
     const clamped = pct == null ? 0 : Math.max(0, Math.min(1.4, pct));
@@ -702,14 +758,28 @@
     const colorVar = { good: "var(--status-good)", warning: "var(--status-warning)", serious: "var(--status-serious)", critical: "var(--status-critical)", unbudgeted: "var(--baseline)" }[status] || "var(--baseline)";
     return `<div class="meter" title="${pct == null ? "No budget set" : fmtPct(pct)}"><span style="width:${width}%; background:${colorVar}"></span></div>`;
   }
-  function kpiCard({ label, value, sub, deltaText, deltaGood }) {
+  function kpiCard({ label, value, sub, deltaText, deltaGood, icon: iconName, iconColor = "var(--accent)", sparkline }) {
     return `
   <div class="card kpi">
+    ${iconName ? `<div class="kpi-icon" style="background:color-mix(in srgb, ${iconColor} 16%, transparent); color:${iconColor}">${icon(iconName, { size: 16, strokeWidth: 2.2 })}</div>` : ""}
     <div class="kpi-label">${label}</div>
     <div class="kpi-value">${value}</div>
     ${sub ? `<div class="kpi-sub">${sub}</div>` : ""}
     ${deltaText ? `<div class="kpi-delta ${deltaGood ? "delta-up good" : "delta-up bad"}">${deltaText}</div>` : ""}
+    ${sparkline && sparkline.length > 1 ? `<div class="kpi-spark">${sparklineSvg(sparkline, iconColor)}</div>` : ""}
   </div>`;
+  }
+  function sparklineSvg(values, color = "var(--accent)", w = 64, h = 22) {
+    const min = Math.min(...values), max = Math.max(...values);
+    const span = max - min || 1;
+    const step = w / (values.length - 1);
+    const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(h - (v - min) / span * (h - 4) - 2).toFixed(1)}`).join(" ");
+    const lastX = ((values.length - 1) * step).toFixed(1);
+    const lastY = (h - (values[values.length - 1] - min) / span * (h - 4) - 2).toFixed(1);
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" fill="none">
+    <polyline points="${pts}" stroke="${color}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+    <circle cx="${lastX}" cy="${lastY}" r="2.2" fill="${color}"/>
+  </svg>`;
   }
   function captureFocus(scope = document) {
     const active = document.activeElement;
@@ -973,6 +1043,16 @@
     const rr = computePortfolioRunRate(rows);
     const pctUsed = total.budget > 0 ? total.committed / total.budget : null;
     const paceExpected = asOf / 12;
+    const monthlyActualToDate = total.byMonth.actual.slice(0, asOf);
+    const cumCommittedToDate = [];
+    {
+      let run = 0;
+      for (let i = 0; i < asOf; i++) {
+        run += (total.byMonth.actual[i] || 0) + (total.byMonth.encumbrance[i] || 0);
+        cumCommittedToDate.push(run);
+      }
+    }
+    const projectedStatusColor = { good: "var(--status-good)", warning: "var(--status-warning)", serious: "var(--status-serious)", critical: "var(--status-critical)", unbudgeted: "var(--baseline)" }[rr.status];
     root.innerHTML = `
     <div class="view-head">
       <h1>Dashboard</h1>
@@ -980,11 +1060,11 @@
     </div>
 
     <div class="grid kpi-row">
-      ${kpiCard({ label: "Total budget", value: "$" + fmtMoney(total.budget, { compact: true }), sub: `FY${fy} plan` })}
-      ${kpiCard({ label: "Actual spend (YTD)", value: "$" + fmtMoney(total.actual, { compact: true }), sub: `Through ${MONTH_NAMES[asOf - 1]} \xB7 ${fmtPct(paceExpected)} of year elapsed` })}
-      ${kpiCard({ label: "Encumbered / committed", value: "$" + fmtMoney(total.encumbrance, { compact: true }), sub: "Open POs & obligations" })}
-      ${kpiCard({ label: "Remaining balance", value: "$" + fmtMoney(total.balance, { compact: true }), sub: pctUsed != null ? `${fmtPct(pctUsed)} of budget committed` : "No budget set" })}
-      ${kpiCard({ label: "Projected year-end spend", value: "$" + fmtMoney(rr.projectedAnnual, { compact: true }), sub: rr.hasBudget ? `${rr.projectedVariancePct >= 0 ? "+" : ""}${fmtPct(rr.projectedVariancePct)} vs budget at current run-rate` : "No budget set", deltaText: rr.hasBudget ? STATUS_LABEL[rr.status] : null, deltaGood: rr.status === "good" })}
+      ${kpiCard({ label: "Total budget", value: "$" + fmtMoney(total.budget, { compact: true }), sub: `FY${fy} plan`, icon: "layers", iconColor: "var(--series-1)" })}
+      ${kpiCard({ label: "Actual spend (YTD)", value: "$" + fmtMoney(total.actual, { compact: true }), sub: `Through ${MONTH_NAMES[asOf - 1]} \xB7 ${fmtPct(paceExpected)} of year elapsed`, icon: "trend", iconColor: "var(--series-3)", sparkline: monthlyActualToDate.length > 1 ? monthlyActualToDate : null })}
+      ${kpiCard({ label: "Encumbered / committed", value: "$" + fmtMoney(total.encumbrance, { compact: true }), sub: "Open POs & obligations", icon: "inbox", iconColor: "var(--series-2)" })}
+      ${kpiCard({ label: "Remaining balance", value: "$" + fmtMoney(total.balance, { compact: true }), sub: pctUsed != null ? `${fmtPct(pctUsed)} of budget committed` : "No budget set", icon: "scale", iconColor: "var(--series-6)" })}
+      ${kpiCard({ label: "Projected year-end spend", value: "$" + fmtMoney(rr.projectedAnnual, { compact: true }), sub: rr.hasBudget ? `${rr.projectedVariancePct >= 0 ? "+" : ""}${fmtPct(rr.projectedVariancePct)} vs budget at current run-rate` : "No budget set", deltaText: rr.hasBudget ? STATUS_LABEL[rr.status] : null, deltaGood: rr.status === "good", icon: "chart", iconColor: projectedStatusColor, sparkline: cumCommittedToDate.length > 1 ? cumCommittedToDate : null })}
     </div>
 
     <div class="grid two-col">
@@ -1078,7 +1158,7 @@
     return `
   <div class="view-head"><h1>Dashboard</h1></div>
   <div class="card empty-state">
-    <div class="big-ic">\u{1F4CA}</div>
+    <div class="big-ic">${icon("dashboard", { size: 44, strokeWidth: 1.6 })}</div>
     <h3>No data yet</h3>
     ${hasOrphanTransactions ? `<p>${s.transactions.length.toLocaleString()} transaction line(s) are imported, but there are no categories or projects to group them under yet. Add matching project codes in <b>Data &amp; Settings \u2192 Categories &amp; projects</b> (or import a budget template) so they show up here.</p>` : `<p>Load the sample dataset to explore the tool, or head to <b>Data &amp; Settings</b> to import your own budget and actuals.</p>`}
     <div class="field-row" style="justify-content:center;margin-top:14px">
@@ -1203,7 +1283,7 @@
     const isOpen = expanded.has(cat.id);
     const catRow = `
     <tr class="row-category" data-cat="${cat.id}">
-      <td class="name-cell">${isOpen ? "\u25BE" : "\u25B8"} ${cat.name}</td>
+      <td class="name-cell">${icon(isOpen ? "chevronDown" : "chevronRight", { size: 14, strokeWidth: 2.4 })} ${cat.name}</td>
       <td class="num">$${fmtMoney(cat.budget, { compact: true })}</td>
       <td class="num">$${fmtMoney(cat.actual, { compact: true })}</td>
       <td class="num">$${fmtMoney(cat.encumbrance, { compact: true })}</td>
@@ -1382,6 +1462,7 @@
   var PAGE_SIZE = 50;
   var vendorFilter = "";
   var typeFilter = "";
+  var docTypeFilter = "";
   function render4(root) {
     const s = Store.state;
     if (!s.categories.length) {
@@ -1469,8 +1550,10 @@
     const rr = computeRunRate(a.actualByMonth, a.encumbranceByMonth, b.total, asOf);
     let txs = s.transactions.filter((t) => t.project === projectCode && t.year === fy);
     const vendors = [...new Set(txs.map((t) => t.vendor).filter(Boolean))].sort();
+    const docTypes = [...new Set(txs.map((t) => friendlyDocType(t.docType)))].sort();
     if (vendorFilter) txs = txs.filter((t) => t.vendor === vendorFilter);
     if (typeFilter) txs = txs.filter((t) => t.balanceType === typeFilter);
+    if (docTypeFilter) txs = txs.filter((t) => friendlyDocType(t.docType) === docTypeFilter);
     if (txSearch.trim()) {
       const q = txSearch.trim().toLowerCase();
       txs = txs.filter((t) => [t.desc, t.vendor, t.docNo].some((v) => v && String(v).toLowerCase().includes(q)));
@@ -1488,11 +1571,11 @@
     ${crumbs([{ label: "All categories", action: "root" }, { label: cat ? cat.name : "", action: "cat" }, { label: proj ? proj.name : "" }])}
 
     <div class="grid kpi-row">
-      <div class="card kpi"><div class="kpi-label">FY${fy} budget</div><div class="kpi-value">$${fmtMoney(b.total, { compact: true })}</div></div>
-      <div class="card kpi"><div class="kpi-label">Actual</div><div class="kpi-value">$${fmtMoney(a.actual, { compact: true })}</div></div>
-      <div class="card kpi"><div class="kpi-label">Encumbered</div><div class="kpi-value">$${fmtMoney(a.encumbrance, { compact: true })}</div></div>
-      <div class="card kpi"><div class="kpi-label">Balance</div><div class="kpi-value">$${fmtMoney(b.total - a.actual - a.encumbrance, { compact: true })}</div></div>
-      <div class="card kpi"><div class="kpi-label">Projected year-end</div><div class="kpi-value">$${fmtMoney(rr.projectedAnnual, { compact: true })}</div><div style="margin-top:4px">${statusChip(rr.status)}</div></div>
+      ${kpiCard({ label: `FY${fy} budget`, value: "$" + fmtMoney(b.total, { compact: true }), icon: "layers", iconColor: "var(--series-1)" })}
+      ${kpiCard({ label: "Actual", value: "$" + fmtMoney(a.actual, { compact: true }), icon: "trend", iconColor: "var(--series-3)" })}
+      ${kpiCard({ label: "Encumbered", value: "$" + fmtMoney(a.encumbrance, { compact: true }), icon: "inbox", iconColor: "var(--series-2)" })}
+      ${kpiCard({ label: "Balance", value: "$" + fmtMoney(b.total - a.actual - a.encumbrance, { compact: true }), icon: "scale", iconColor: "var(--series-6)" })}
+      ${kpiCard({ label: "Projected year-end", value: "$" + fmtMoney(rr.projectedAnnual, { compact: true }), sub: statusChip(rr.status), icon: "chart" })}
     </div>
 
     <div class="card chart-card">
@@ -1507,7 +1590,10 @@
       <div class="field"><label>Vendor</label>
         <select id="tx-vendor"><option value="">All vendors</option>${vendors.map((v) => `<option ${vendorFilter === v ? "selected" : ""}>${v}</option>`).join("")}</select>
       </div>
-      <div class="field"><label>Type</label>
+      <div class="field"><label>Document type</label>
+        <select id="tx-doctype"><option value="">All document types</option>${docTypes.map((d) => `<option ${docTypeFilter === d ? "selected" : ""}>${d}</option>`).join("")}</select>
+      </div>
+      <div class="field"><label>Basis</label>
         <select id="tx-type"><option value="">All</option><option value="A" ${typeFilter === "A" ? "selected" : ""}>Actual</option><option value="E" ${typeFilter === "E" ? "selected" : ""}>Encumbrance</option></select>
       </div>
       <div class="field-row" style="margin-left:auto"><button class="btn btn-sm" id="tx-export">Export CSV</button></div>
@@ -1519,7 +1605,8 @@
           <th data-sort="vendor" class="${txSort.key === "vendor" ? "sorted" : ""}">Vendor</th>
           <th data-sort="desc" class="${txSort.key === "desc" ? "sorted" : ""}">Description</th>
           <th data-sort="docNo" class="${txSort.key === "docNo" ? "sorted" : ""}">Doc #</th>
-          <th>Type</th>
+          <th>Document type</th>
+          <th>Basis</th>
           <th data-sort="amount" class="${txSort.key === "amount" ? "sorted" : ""}">Amount</th>
         </tr></thead>
         <tbody>
@@ -1528,9 +1615,10 @@
             <td>${t.vendor || "\u2014"}</td>
             <td>${t.desc || "\u2014"}</td>
             <td>${t.docNo || "\u2014"}</td>
+            <td><span class="badge-soft">${friendlyDocType(t.docType)}</span></td>
             <td><span class="badge-soft">${t.balanceType === "E" ? "Encumbrance" : "Actual"}</span></td>
             <td class="num">$${fmtMoney(t.amount)}</td>
-          </tr>`).join("") || `<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">No transactions match these filters.</td></tr>`}
+          </tr>`).join("") || `<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">No transactions match these filters.</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -1555,13 +1643,18 @@
       txPage = 1;
       render4(root);
     });
+    root.querySelector("#tx-doctype").addEventListener("change", (e) => {
+      docTypeFilter = e.target.value;
+      txPage = 1;
+      render4(root);
+    });
     root.querySelector("#tx-type").addEventListener("change", (e) => {
       typeFilter = e.target.value;
       txPage = 1;
       render4(root);
     });
     root.querySelector("#tx-export").addEventListener("click", () => {
-      const csv = toCsv(["Date", "Vendor", "Description", "Doc No", "Type", "Amount"], txs.map((t) => [t.postedDate, t.vendor, t.desc, t.docNo, t.balanceType === "E" ? "Encumbrance" : "Actual", t.amount]));
+      const csv = toCsv(["Date", "Vendor", "Description", "Doc No", "Document Type", "Basis", "Amount"], txs.map((t) => [t.postedDate, t.vendor, t.desc, t.docNo, friendlyDocType(t.docType), t.balanceType === "E" ? "Encumbrance" : "Actual", t.amount]));
       downloadTextFile(`${projectCode}-transactions-FY${fy}.csv`, csv);
     });
     root.querySelectorAll("th[data-sort]").forEach((th) => th.addEventListener("click", () => {
@@ -1933,6 +2026,7 @@
     { key: "vendor", label: "Vendor / payee", required: false },
     { key: "description", label: "Description", required: false },
     { key: "docNo", label: "Document / invoice number", required: false },
+    { key: "docType", label: "Document type (e.g. Invoice, PO, Credit Memo)", required: false },
     { key: "category", label: "Expense category code (e.g. FERC/GL natural account)", required: false }
   ];
   function looksLikeHeaderRow(rawRow) {
@@ -2022,6 +2116,7 @@
     const iVendor = mapping.vendor ? idx("vendor") : -1;
     const iDesc = mapping.description ? idx("description") : -1;
     const iDocNo = mapping.docNo ? idx("docNo") : -1;
+    const iDocType = mapping.docType ? idx("docType") : -1;
     const iCategory = mapping.category ? idx("category") : -1;
     const out = [];
     for (const row of rows) {
@@ -2052,7 +2147,7 @@
         year,
         month,
         balanceType,
-        docType: null,
+        docType: iDocType >= 0 && row[iDocType] != null ? String(row[iDocType]) : null,
         docNo: docNo || null,
         desc: iDesc >= 0 ? row[iDesc] : null,
         vendor: iVendor >= 0 ? row[iVendor] : null,
@@ -2312,7 +2407,8 @@
       type: guessColumn(found.header, ["type", "balance type"]),
       vendor: guessColumn(found.header, ["vendor", "payee", "supplier"]),
       description: guessColumn(found.header, ["desc", "memo", "narrative"]),
-      docNo: guessColumn(found.header, ["doc", "invoice", "reference"]),
+      docNo: guessColumn(found.header, ["doc no", "invoice no", "invoice number", "reference", "doc #"]),
+      docType: guessColumn(found.header, ["doc type", "document type", "sub doc type", "transaction type"]),
       category: guessColumn(found.header, ["ferc", "natural account", "expense category"])
     };
     const optionsHtml = (selected) => `<option value="">\u2014</option>` + found.header.filter(Boolean).map((h) => `<option value="${h}" ${h === selected ? "selected" : ""}>${h}</option>`).join("");
@@ -2570,19 +2666,19 @@
 
   // js/app.js
   var VIEWS = {
-    dashboard: { mod: dashboard_exports, label: "Dashboard", icon: "\u25F1", group: "Overview" },
-    comparison: { mod: comparison_exports, label: "Budget vs. Actual", icon: "\u2263", group: "Overview" },
-    runrate: { mod: runrate_exports, label: "Run Rate & Forecast", icon: "\u2934", group: "Overview" },
-    drilldown: { mod: drilldown_exports, label: "Drill-Down", icon: "\u2315", group: "Explore" },
-    planning: { mod: planning_exports, label: "Planning", icon: "\u270E", group: "Explore" },
-    data: { mod: dataSettings_exports, label: "Data & Settings", icon: "\u2699", group: "Manage" }
+    dashboard: { mod: dashboard_exports, label: "Dashboard", icon: "dashboard", group: "Overview" },
+    comparison: { mod: comparison_exports, label: "Budget vs. Actual", icon: "scale", group: "Overview" },
+    runrate: { mod: runrate_exports, label: "Run Rate & Forecast", icon: "trend", group: "Overview" },
+    drilldown: { mod: drilldown_exports, label: "Drill-Down", icon: "search", group: "Explore" },
+    planning: { mod: planning_exports, label: "Planning", icon: "edit", group: "Explore" },
+    data: { mod: dataSettings_exports, label: "Data & Settings", icon: "settings", group: "Manage" }
   };
   function renderShell() {
     document.getElementById("app").innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark"></div>
+          <div class="brand-mark">${icon("chart", { size: 18, strokeWidth: 2.4 })}</div>
           <div class="brand-text"><div class="name">BudgetBridge</div><div class="tag">Marketing budget &amp; planning</div></div>
         </div>
         <nav class="nav" id="nav"></nav>
@@ -2605,7 +2701,7 @@
         html += `<div class="nav-section-label">${v.group}</div>`;
         lastGroup = v.group;
       }
-      html += `<button class="nav-item ${Store.state.route === key ? "active" : ""}" data-route="${key}"><span class="ic">${v.icon}</span>${v.label}</button>`;
+      html += `<button class="nav-item ${Store.state.route === key ? "active" : ""}" data-route="${key}"><span class="ic">${icon(v.icon, { size: 17, strokeWidth: 2 })}</span>${v.label}</button>`;
     }
     nav.innerHTML = html;
     nav.querySelectorAll("[data-route]").forEach((b) => b.addEventListener("click", () => Store.setRoute(b.getAttribute("data-route"))));

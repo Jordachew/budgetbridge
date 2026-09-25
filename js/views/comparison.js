@@ -1,6 +1,7 @@
 import { Store } from "../store.js";
 import { aggregateActuals, budgetByProject, buildComparisonRows, grandTotal, fmtMoney, fmtPct, MONTH_NAMES } from "../calc.js";
 import { statusChip, meterBar, toCsv, downloadTextFile, captureFocus, restoreFocus } from "../ui.js";
+import { icon } from "../icons.js";
 
 let expanded = new Set();
 let search = "";
@@ -102,7 +103,7 @@ function renderCategoryRows(cat) {
   const isOpen = expanded.has(cat.id);
   const catRow = `
     <tr class="row-category" data-cat="${cat.id}">
-      <td class="name-cell">${isOpen ? "▾" : "▸"} ${cat.name}</td>
+      <td class="name-cell">${icon(isOpen ? "chevronDown" : "chevronRight", { size: 14, strokeWidth: 2.4 })} ${cat.name}</td>
       <td class="num">$${fmtMoney(cat.budget, { compact: true })}</td>
       <td class="num">$${fmtMoney(cat.actual, { compact: true })}</td>
       <td class="num">$${fmtMoney(cat.encumbrance, { compact: true })}</td>
