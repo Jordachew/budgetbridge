@@ -100,17 +100,54 @@ Any of these work, in increasing order of convenience:
   the synced folder — no server needed, works offline once synced.
 - **Hosted as a static site.** GitHub Pages, Netlify, Vercel, or an internal
   web server — point it at this folder and it just works, since it's plain
-  HTML/CSS/JS with no build step. This is nicer for onboarding (one URL to
-  share) but the data storage model is unchanged: each visitor's browser is
-  still the only place their imported data lives, and the shared workbook is
-  still how the team stays in sync.
+  HTML/CSS/JS with no build step to run at deploy time. This is nicer for
+  onboarding (one URL to share) but the data storage model is unchanged: each
+  visitor's browser is still the only place their imported data lives, and
+  the shared workbook is still how the team stays in sync.
+
+### SharePoint / OneDrive specifically
+
+Putting the folder in a SharePoint document library works — but only if you
+**sync that library to a local folder** (the "Sync" button in SharePoint, or
+via the OneDrive app) and open `index.html` from the synced local copy.
+Clicking `index.html` from SharePoint's browser interface *without* syncing
+generally won't run it — SharePoint Online previews or downloads HTML files
+instead of executing them, since most tenants disable custom script
+execution in document libraries for security. Once synced locally, it's a
+completely normal local file and works exactly as described above.
+
+### A note on how `index.html` loads its code
+
+Opening `index.html` straight from disk (double-clicking it, or opening it
+from a synced drive folder) works with **no server required** — but this
+depends on `index.html` loading a single pre-built script
+(`js/app.bundle.js`), not the individual `js/*.js` files directly. Browsers
+block ES module imports (`<script type="module">`) from the `file://`
+protocol for security, so if `index.html` referenced the source files
+directly, it would load a blank sidebar and silently do nothing when opened
+without a server — no visible error unless you check the browser console.
+This is also why, if you were serving an *older* copy of this project from a
+plain `file://` open and saw nothing happen, that was the cause.
+
+**If you edit the source** (anything under `js/`, other than
+`app.bundle.js` itself), rebuild the bundle before testing:
+
+```bash
+npx esbuild js/app.js --bundle --outfile=js/app.bundle.js --format=iife --target=es2018
+```
+
+`index.html` only ever loads `js/app.bundle.js`; the individual `js/*.js`
+files exist for readability and editing, not to be loaded directly.
 
 ## Project structure
 
 ```
-index.html            App shell — loads vendor libs and js/app.js
+index.html            App shell — loads vendor libs and js/app.bundle.js
 css/styles.css         Design tokens (light + dark) and component styles
 js/
+  app.bundle.js           The file index.html actually loads — a built,
+                           dependency-free bundle of everything below (see
+                           "Editing the source" if you change app.js/store.js/etc.)
   app.js                Router, sidebar/topbar, focus-safe re-rendering
   store.js               Central state + persistence orchestration
   db.js                   IndexedDB wrapper

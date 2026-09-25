@@ -5,7 +5,7 @@ import {
   parseActualsWithMapping, REQUIRED_FIELDS, inspectWorkbookForBudgetTemplate,
   parseBudgetTemplateSheet, buildWorkbook, downloadWorkbook, parseBudgetBridgeWorkbook,
 } from "../parsers.js";
-import { estimateUsage } from "../db.js";
+import { db, estimateUsage } from "../db.js";
 import { slugify } from "../calc.js";
 
 let tab = "import";
@@ -57,7 +57,6 @@ function renderImport(body) {
   body.querySelectorAll("[data-remove-batch]").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("Remove all transactions from this import batch?")) return;
     const id = b.getAttribute("data-remove-batch");
-    const { db } = await import("../db.js");
     await db.deleteByIndex("transactions", "byBatch", id);
     await db.delete("importBatches", id);
     await Store.loadAll();
