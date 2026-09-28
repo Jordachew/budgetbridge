@@ -47,9 +47,26 @@ export function parsePeriodLabel(label) {
   return { year: null, month: null };
 }
 
-function excelDateToParts(v) {
-  if (v instanceof Date && !isNaN(v)) return { year: v.getFullYear(), month: v.getMonth() + 1, date: v };
-  return { year: null, month: null, date: null };
+// SheetJS represents a date cell as a JS Date when the source file carries real
+// cell types (.xlsx) but as a raw Excel serial number when reading plain-text
+// CSV without `cellDates` (which CSV has no cell types to support). Handle all
+// three shapes a "date" column can arrive in: Date, serial number, or text label.
+function excelSerialToDate(serial) {
+  const ms = Math.round((serial - 25569) * 86400 * 1000);
+  const d = new Date(ms);
+  return isNaN(d) ? null : d;
+}
+
+function coerceDateParts(raw) {
+  if (raw instanceof Date && !isNaN(raw)) {
+    return { year: raw.getFullYear(), month: raw.getMonth() + 1, date: raw };
+  }
+  if (typeof raw === "number" && isFinite(raw) && raw > 0) {
+    const d = excelSerialToDate(raw);
+    if (d) return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, date: d };
+  }
+  const { year, month } = parsePeriodLabel(raw);
+  return { year, month, date: null };
 }
 
 function simpleHash(str) {
@@ -133,10 +150,10 @@ export function parseGlExportRows(header, rows) {
     const project = accounts[2] || null;
     const ferc = accounts[3] || null;
     if (!project) continue;
-    let { year, month } = excelDateToParts(row[iEnddate]);
+    let { year, month } = coerceDateParts(row[iEnddate]);
     if (!year) ({ year, month } = parsePeriodLabel(row[iPeriod]));
     if (!year) continue;
-    const posted = row[iPosted] instanceof Date ? row[iPosted] : null;
+    const posted = coerceDateParts(row[iPosted]).date;
     const docNo = row[iDocNo] != null ? String(row[iDocNo]) : "";
     const line = row[iLine] != null ? String(row[iLine]) : "";
     const key = simpleHash(["gl", project, ferc, docNo, line, net, year, month].join("|"));
@@ -174,15 +191,8 @@ export function parseActualsWithMapping(header, rows, mapping, batchId) {
     if (!amount) continue;
     const project = row[iProject] != null ? String(row[iProject]).trim() : "";
     if (!project) continue;
-    let year = null, month = null, dateStr = null;
-    const rawDate = row[iDate];
-    if (rawDate instanceof Date) {
-      year = rawDate.getFullYear(); month = rawDate.getMonth() + 1;
-      dateStr = rawDate.toISOString().slice(0, 10);
-    } else {
-      const parsed = parsePeriodLabel(rawDate);
-      year = parsed.year; month = parsed.month;
-    }
+    const { year, month, date: parsedDate } = coerceDateParts(row[iDate]);
+    const dateStr = parsedDate ? parsedDate.toISOString().slice(0, 10) : null;
     if (!year || !month) continue;
     const typeRaw = iType >= 0 ? String(row[iType] || "").toLowerCase() : "";
     const balanceType = typeRaw.startsWith("enc") || typeRaw === "e" ? "E" : "A";

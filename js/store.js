@@ -1,28 +1,37 @@
 // ===========================================================
 // BudgetBridge — central app state + persistence orchestration.
 // UI modules read Store.state and call Store methods; nothing
-// else touches IndexedDB directly.
+// else talks to the server API directly. The server (not the
+// browser) is the shared source of truth every manager's browser
+// reads from — this is what makes budgets roll up automatically.
 // ===========================================================
-import { db, getMeta, setMeta } from "./db.js";
+import { api } from "./api.js";
 import { slugify } from "./calc.js";
 
-function nowIso() { return new Date().toISOString(); }
+function prefGet(key, fallback) {
+  try { const v = localStorage.getItem(`bb:${key}`); return v == null ? fallback : JSON.parse(v); } catch { return fallback; }
+}
+function prefSet(key, value) {
+  try { localStorage.setItem(`bb:${key}`, JSON.stringify(value)); } catch { /* private mode etc. — fine, it's just a UI preference */ }
+}
 
 class StoreImpl {
   constructor() {
     this.state = {
       ready: false,
+      authed: false,
+      me: null, // { id, name, username, role, assignedCategoryIds }
       categories: [],
       projects: [],
       budgetLines: [],
       transactions: [],
       importBatches: [],
+      planNotes: [],
       fiscalYear: new Date().getFullYear(),
       asOfMonth: new Date().getMonth() + 1,
       theme: "system",
       route: "dashboard",
       drill: { categoryId: null, projectCode: null },
-      planNotes: [],
     };
     this._listeners = new Set();
   }
@@ -39,25 +48,62 @@ class StoreImpl {
     return [...years].sort((a, b) => a - b);
   }
 
-  async loadAll() {
-    const [categories, projects, budgetLines, transactions, importBatches, planNotes] = await Promise.all([
-      db.getAll("categories"), db.getAll("projects"), db.getAll("budgetLines"), db.getAll("transactions"), db.getAll("importBatches"), db.getAll("planNotes"),
-    ]);
-    const savedFy = await getMeta("fiscalYear", null);
-    const savedAsOf = await getMeta("asOfMonth", null);
-    const theme = await getMeta("theme", "system");
+  /** Can the signed-in user edit budget/notes/cost items under this cost item group? */
+  canEditCategory(categoryId) {
+    const me = this.state.me;
+    if (!me) return false;
+    if (me.role === "admin") return true;
+    return me.assignedCategoryIds.includes(categoryId);
+  }
+  canEditProject(projectCode) {
+    const proj = this.state.projects.find((p) => p.code === projectCode);
+    return proj ? this.canEditCategory(proj.categoryId) : false;
+  }
+  get isAdmin() { return this.state.me?.role === "admin"; }
 
-    let fiscalYear = savedFy;
-    if (!fiscalYear) {
-      const years = new Set([...budgetLines.map((b) => b.fiscalYear), ...transactions.map((t) => t.year)]);
+  /** Call once at boot: checks the session, then loads shared data if signed in. */
+  async init() {
+    const theme = prefGet("theme", "system");
+    const fiscalYear = prefGet("fiscalYear", null);
+    const asOfMonth = prefGet("asOfMonth", null);
+    this.setState({ theme, ...(fiscalYear ? { fiscalYear } : {}), ...(asOfMonth ? { asOfMonth } : {}) });
+    this._applyTheme();
+
+    try {
+      await api.me();
+    } catch {
+      this.setState({ ready: true, authed: false });
+      return;
+    }
+    await this.loadAll();
+  }
+
+  async login(username, password) {
+    const { user } = await api.login(username, password);
+    await this.loadAll();
+    return user;
+  }
+  async logout() {
+    await api.logout().catch(() => {});
+    this.setState({
+      authed: false, me: null, categories: [], projects: [], budgetLines: [],
+      transactions: [], importBatches: [], planNotes: [],
+    });
+  }
+
+  async loadAll() {
+    const data = await api.bootstrap();
+    let fiscalYear = this.state.fiscalYear;
+    if (!prefGet("fiscalYear", null)) {
+      const years = new Set([...data.budgetLines.map((b) => b.fiscalYear), ...data.transactions.map((t) => t.year)]);
       fiscalYear = years.size ? Math.max(...years) : new Date().getFullYear();
     }
     this.setState({
-      categories, projects, budgetLines, transactions, importBatches, planNotes,
-      fiscalYear, asOfMonth: savedAsOf || new Date().getMonth() + 1,
-      theme, ready: true,
+      authed: true, me: data.me,
+      categories: data.categories, projects: data.projects, budgetLines: data.budgetLines,
+      transactions: data.transactions, importBatches: data.importBatches, planNotes: data.planNotes,
+      fiscalYear, ready: true,
     });
-    this._applyTheme();
   }
 
   _applyTheme() {
@@ -67,78 +113,81 @@ class StoreImpl {
     else document.documentElement.removeAttribute("data-theme");
   }
 
-  async setTheme(theme) { await setMeta("theme", theme); this.setState({ theme }); this._applyTheme(); }
-  async setFiscalYear(fy) { await setMeta("fiscalYear", fy); this.setState({ fiscalYear: fy }); }
-  async setAsOfMonth(m) { await setMeta("asOfMonth", m); this.setState({ asOfMonth: m }); }
+  setTheme(theme) { prefSet("theme", theme); this.setState({ theme }); this._applyTheme(); }
+  setFiscalYear(fy) { prefSet("fiscalYear", fy); this.setState({ fiscalYear: fy }); }
+  setAsOfMonth(m) { prefSet("asOfMonth", m); this.setState({ asOfMonth: m }); }
 
   setRoute(route, drill = {}) { this.setState({ route, drill: { ...this.state.drill, ...drill } }); }
 
-  // ---------- categories ----------
+  // ---------- categories (cost item groups) — admin only ----------
   async upsertCategory(cat) {
     const id = cat.id || slugify(cat.name);
-    const record = { id, name: cat.name, sortOrder: cat.sortOrder ?? this.state.categories.length };
-    await db.put("categories", record);
-    const categories = [...this.state.categories.filter((c) => c.id !== id), record];
-    this.setState({ categories });
-    return record;
+    const { category } = await api.upsertCategory({ id, name: cat.name, sortOrder: cat.sortOrder ?? this.state.categories.length });
+    this.setState({ categories: [...this.state.categories.filter((c) => c.id !== category.id), category] });
+    return category;
+  }
+  async renameCategory(id, name) {
+    await api.renameCategory(id, name);
+    this.setState({ categories: this.state.categories.map((c) => (c.id === id ? { ...c, name } : c)) });
   }
   async deleteCategory(id) {
-    const inUse = this.state.projects.some((p) => p.categoryId === id);
-    if (inUse) throw new Error("Category still has projects assigned. Reassign them first.");
-    await db.delete("categories", id);
+    await api.deleteCategory(id);
     this.setState({ categories: this.state.categories.filter((c) => c.id !== id) });
   }
 
-  // ---------- projects ----------
+  // ---------- projects (cost items) — admin, or the manager who owns the group ----------
   async upsertProject(proj) {
-    const record = { code: proj.code.trim(), name: proj.name.trim(), categoryId: proj.categoryId, active: proj.active !== false };
-    await db.put("projects", record);
-    const projects = [...this.state.projects.filter((p) => p.code !== record.code), record];
-    this.setState({ projects });
-    return record;
+    const { project } = await api.upsertProject({ code: proj.code.trim(), name: proj.name.trim(), categoryId: proj.categoryId });
+    this.setState({ projects: [...this.state.projects.filter((p) => p.code !== project.code), project] });
+    return project;
+  }
+  async updateProject(code, patch) {
+    await api.updateProject(code, patch);
+    this.setState({ projects: this.state.projects.map((p) => (p.code === code ? { ...p, ...patch } : p)) });
   }
   async deleteProject(code) {
-    await db.delete("projects", code);
-    const budgetLines = this.state.budgetLines.filter((b) => b.projectCode !== code);
-    for (const b of this.state.budgetLines.filter((b) => b.projectCode === code)) await db.delete("budgetLines", b.id);
-    const planNotes = this.state.planNotes.filter((n) => n.projectCode !== code);
-    for (const n of this.state.planNotes.filter((n) => n.projectCode === code)) await db.delete("planNotes", n.id);
-    this.setState({ projects: this.state.projects.filter((p) => p.code !== code), budgetLines, planNotes });
+    await api.deleteProject(code);
+    this.setState({
+      projects: this.state.projects.filter((p) => p.code !== code),
+      budgetLines: this.state.budgetLines.filter((b) => b.projectCode !== code),
+      planNotes: this.state.planNotes.filter((n) => n.projectCode !== code),
+    });
   }
 
   // ---------- budget lines ----------
   async setBudgetAmount(fiscalYear, projectCode, month, amount) {
     const id = `${fiscalYear}:${projectCode}:${month}`;
-    const record = { id, fiscalYear, projectCode, month, amount: Number(amount) || 0, updatedAt: nowIso() };
-    await db.put("budgetLines", record);
-    const budgetLines = [...this.state.budgetLines.filter((b) => b.id !== id), record];
-    this.setState({ budgetLines });
+    const value = Number(amount) || 0;
+    await api.setBudgetAmount(fiscalYear, projectCode, month, value);
+    const record = { id, fiscalYear, projectCode, month, amount: value };
+    this.setState({ budgetLines: [...this.state.budgetLines.filter((b) => b.id !== id), record] });
   }
 
   async bulkSetBudgetLines(lines) {
-    await db.bulkPut("budgetLines", lines);
+    const { applied } = await api.bulkSetBudgetLines(lines);
     const byId = new Map(this.state.budgetLines.map((b) => [b.id, b]));
-    for (const l of lines) byId.set(l.id, l);
+    for (const l of lines) { if (this.canEditProject(l.projectCode)) byId.set(l.id, l); }
     this.setState({ budgetLines: [...byId.values()] });
+    return applied;
   }
 
-  // ---------- transactions / imports ----------
+  // ---------- transactions / imports (admin) ----------
   async importTransactions(rows, meta) {
-    const batchId = `batch-${Date.now()}`;
-    const withBatch = rows.map((r) => ({ ...r, batchId: r.batchId || batchId }));
-    await db.bulkPut("transactions", withBatch);
-    const batchRecord = { id: batchId, date: nowIso(), rowCount: withBatch.length, ...meta };
-    await db.put("importBatches", batchRecord);
-
+    const { batch } = await api.importTransactions(rows, meta);
     const byId = new Map(this.state.transactions.map((t) => [t.id, t]));
-    for (const t of withBatch) byId.set(t.id, t);
-    this.setState({ transactions: [...byId.values()], importBatches: [...this.state.importBatches, batchRecord] });
-    return batchRecord;
+    for (const r of rows) byId.set(r.id, { ...r, batchId: batch.id });
+    this.setState({ transactions: [...byId.values()], importBatches: [...this.state.importBatches, batch] });
+    return batch;
   }
-
+  async deleteBatch(id) {
+    await api.deleteBatch(id);
+    this.setState({
+      transactions: this.state.transactions.filter((t) => t.batchId !== id),
+      importBatches: this.state.importBatches.filter((b) => b.id !== id),
+    });
+  }
   async clearTransactions() {
-    await db.clear("transactions");
-    await db.clear("importBatches");
+    await api.clearTransactions();
     this.setState({ transactions: [], importBatches: [] });
   }
 
@@ -146,32 +195,43 @@ class StoreImpl {
   async setPlanNote(fiscalYear, projectCode, text) {
     const id = `${fiscalYear}:${projectCode}`;
     const trimmed = (text || "").trim();
-    if (!trimmed) {
-      await db.delete("planNotes", id);
-      this.setState({ planNotes: this.state.planNotes.filter((n) => n.id !== id) });
-      return;
-    }
-    const record = { id, fiscalYear, projectCode, text: trimmed, updatedAt: nowIso() };
-    await db.put("planNotes", record);
+    await api.setPlanNote(fiscalYear, projectCode, trimmed);
+    if (!trimmed) { this.setState({ planNotes: this.state.planNotes.filter((n) => n.id !== id) }); return; }
+    const record = { id, fiscalYear, projectCode, text: trimmed };
     this.setState({ planNotes: [...this.state.planNotes.filter((n) => n.id !== id), record] });
   }
 
+  // ---------- danger zone (admin) ----------
   async wipeAll() {
-    await db.wipeAll();
+    await api.wipeAll();
     this.setState({ categories: [], projects: [], budgetLines: [], transactions: [], importBatches: [], planNotes: [] });
   }
 
-  async importWorkbookData(parsed) {
-    await db.wipeAll();
-    await db.bulkPut("categories", parsed.categories);
-    await db.bulkPut("projects", parsed.projects);
-    await db.bulkPut("budgetLines", parsed.budgetLines);
-    if (parsed.transactions?.length) await db.bulkPut("transactions", parsed.transactions);
-    if (parsed.planNotes?.length) await db.bulkPut("planNotes", parsed.planNotes);
-    this.setState({
-      categories: parsed.categories, projects: parsed.projects, budgetLines: parsed.budgetLines,
-      transactions: parsed.transactions || [], planNotes: parsed.planNotes || [],
-    });
+  // ---------- users & access (admin) ----------
+  // Deliberately NOT part of reactive state (this.state / setState): the
+  // user list is only needed by the admin-only "Users & access" tab, and
+  // routing it through setState would fire the app-wide re-render
+  // subscription on every load — which itself reloads the list — an
+  // infinite loop. The view manages its own local copy instead.
+  async loadUsers() {
+    const { users } = await api.adminListUsers();
+    return users;
+  }
+  async createUser(user) {
+    const { user: created } = await api.adminCreateUser(user);
+    return created;
+  }
+  async updateUser(id, patch) {
+    await api.adminUpdateUser(id, patch);
+  }
+  async deleteUser(id) {
+    await api.adminDeleteUser(id);
+  }
+  async setUserAssignments(id, categoryIds) {
+    await api.adminSetAssignments(id, categoryIds);
+  }
+  async changeOwnPassword(oldPassword, newPassword) {
+    return api.changeOwnPassword(oldPassword, newPassword);
   }
 }
 

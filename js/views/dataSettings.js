@@ -1,38 +1,55 @@
 import { Store } from "../store.js";
-import { toast, openModal, downloadTextFile } from "../ui.js";
+import { toast, openModal } from "../ui.js";
 import {
   readWorkbook, fileToArrayBuffer, inspectWorkbookForActuals, parseGlExportRows,
   parseActualsWithMapping, REQUIRED_FIELDS, inspectWorkbookForBudgetTemplate,
   parseBudgetTemplateSheet, buildWorkbook, downloadWorkbook, parseBudgetBridgeWorkbook,
 } from "../parsers.js";
-import { db, estimateUsage } from "../db.js";
 import { slugify } from "../calc.js";
 
-let tab = "import";
+let tab = null; // resolved to a role-appropriate default on first render
+
+const ADMIN_TABS = [
+  { key: "import", label: "Import actuals" },
+  { key: "structure", label: "Cost item groups & cost items" },
+  { key: "access", label: "Users & access" },
+  { key: "backup", label: "Backup" },
+  { key: "account", label: "My account" },
+];
+const MANAGER_TABS = [
+  { key: "structure", label: "My cost items" },
+  { key: "account", label: "My account" },
+];
 
 export function render(root) {
+  const s = Store.state;
+  const tabs = Store.isAdmin ? ADMIN_TABS : MANAGER_TABS;
+  if (!tab || !tabs.some((t) => t.key === tab)) tab = tabs[0].key;
+
   root.innerHTML = `
     <div class="view-head">
       <h1>Data &amp; Settings</h1>
-      <p class="lead">Bring in your actuals export, manage the cost item / cost item group list, and control how this tool's data is stored and shared.</p>
+      <p class="lead">${Store.isAdmin
+        ? "Bring in your actuals export, manage the cost item / cost item group list, and control who can edit what."
+        : "Manage the cost items in your cost item group(s), and your own account."}</p>
     </div>
     <div class="tabbar">
-      <button data-tab="import" class="${tab === "import" ? "active" : ""}">Import actuals</button>
-      <button data-tab="workbook" class="${tab === "workbook" ? "active" : ""}">Share workbook</button>
-      <button data-tab="structure" class="${tab === "structure" ? "active" : ""}">Cost item groups &amp; cost items</button>
-      <button data-tab="storage" class="${tab === "storage" ? "active" : ""}">Storage &amp; danger zone</button>
+      ${tabs.map((t) => `<button data-tab="${t.key}" class="${tab === t.key ? "active" : ""}">${t.label}</button>`).join("")}
     </div>
     <div id="tab-body"></div>
   `;
   root.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.getAttribute("data-tab"); render(root); }));
   const body = root.querySelector("#tab-body");
   if (tab === "import") renderImport(body, root);
-  else if (tab === "workbook") renderWorkbook(body, root);
+  else if (tab === "backup") renderBackup(body, root);
   else if (tab === "structure") renderStructure(body, root);
-  else renderStorage(body, root);
+  else if (tab === "access") renderAccess(body, root);
+  else renderAccount(body, root);
 }
 
-// ---------------------------------------------------------------- import
+function rerender() { render(document.getElementById("view-root")); }
+
+// ---------------------------------------------------------------- import (admin)
 function renderImport(body) {
   body.innerHTML = `
     <div class="card" style="margin-bottom:16px">
@@ -56,11 +73,8 @@ function renderImport(body) {
   wireDropzone(body.querySelector("#dz-template"), body.querySelector("#file-template"), (file) => handleTemplateFile(body, file));
   body.querySelectorAll("[data-remove-batch]").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("Remove all transactions from this import batch?")) return;
-    const id = b.getAttribute("data-remove-batch");
-    await db.deleteByIndex("transactions", "byBatch", id);
-    await db.delete("importBatches", id);
-    await Store.loadAll();
-    render(document.getElementById("view-root"));
+    await Store.deleteBatch(b.getAttribute("data-remove-batch"));
+    rerender();
   }));
 }
 
@@ -96,13 +110,6 @@ async function readAnyWorkbook(file) {
 async function handleActualsFile(body, file) {
   try {
     const wb = await readAnyWorkbook(file);
-    const bbWorkbook = parseBudgetBridgeWorkbook(wb);
-    if (bbWorkbook) {
-      openModal(`<h2>This looks like a BudgetBridge workbook</h2><p>Use <b>Share workbook → Import workbook</b> instead so cost item groups, cost items and budget lines come in correctly.</p><div class="modal-actions"><button class="btn btn-primary" data-close>OK</button></div>`, {
-        onMount: (m, close) => m.querySelector("[data-close]").addEventListener("click", close),
-      });
-      return;
-    }
     const found = inspectWorkbookForActuals(wb);
     if (!found) return toast("Couldn't find a data table in that file", "err");
     if (found.autoFormat === "gl-export") {
@@ -110,7 +117,7 @@ async function handleActualsFile(body, file) {
       if (!rows.length) return toast("No non-zero transaction rows found", "err");
       await Store.importTransactions(rows, { filename: file.name, type: "gl-export" });
       toast(`Imported ${rows.length.toLocaleString()} transaction line(s) from ${file.name}`, "ok");
-      render(document.getElementById("view-root"));
+      rerender();
     } else {
       openMappingModal(found, file);
     }
@@ -165,7 +172,7 @@ function openMappingModal(found, file) {
         await Store.importTransactions(rows, { filename: file.name, type: "mapped" });
         toast(`Imported ${rows.length.toLocaleString()} transaction line(s)`, "ok");
         close();
-        render(document.getElementById("view-root"));
+        rerender();
       });
     },
   });
@@ -190,7 +197,7 @@ async function handleTemplateFile(body, file) {
         modal.querySelector("#do-template-import").addEventListener("click", async () => {
           const fy = Number(modal.querySelector("#tmpl-fy").value) || Store.state.fiscalYear;
           const checked = [...modal.querySelectorAll('input[type="checkbox"]:checked')].map((c) => Number(c.value));
-          let catCount = 0, projCount = 0, lineCount = 0;
+          let catCount = 0, projCount = 0;
           const lines = [];
           for (const si of checked) {
             const sheet = sheets[si];
@@ -209,11 +216,10 @@ async function handleTemplateFile(body, file) {
               });
             }
           }
-          lineCount = lines.length;
           await Store.bulkSetBudgetLines(lines);
           toast(`Imported ${catCount} cost item group${catCount === 1 ? "" : "s"}, ${projCount} cost item${projCount === 1 ? "" : "s"}, FY${fy}`, "ok");
           close();
-          render(document.getElementById("view-root"));
+          rerender();
         });
       },
     });
@@ -223,55 +229,59 @@ async function handleTemplateFile(body, file) {
   }
 }
 
-// ---------------------------------------------------------------- workbook share
-function renderWorkbook(body) {
+// ---------------------------------------------------------------- backup (admin) — download only + danger zone
+function renderBackup(body) {
   const s = Store.state;
   body.innerHTML = `
-    <div class="grid two-col">
-      <div class="card">
-        <h3>Export workbook</h3>
-        <p class="hint">Creates a single .xlsx with your cost item groups, cost items and budget plan (and, optionally, every transaction). Save it into a shared Google Drive / OneDrive / SharePoint folder so teammates can pick up your latest numbers with <b>Import workbook</b> below.</p>
-        <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="inc-tx" /> Include full transaction detail <span class="hint">(bigger file; needed for others to see drill-down detail)</span></label>
-        <button class="btn btn-primary" id="export-wb">Export workbook (.xlsx)</button>
-      </div>
-      <div class="card">
-        <h3>Import workbook</h3>
-        <p class="hint">Loads a BudgetBridge workbook — your own export, or a teammate's — replacing what's in this browser. Use this each time you open the tool to pick up the latest shared version.</p>
-        <div class="dropzone" id="dz-wb">Drop a BudgetBridge workbook here, or click to choose one</div>
-        <input type="file" id="file-wb" accept=".xlsx" style="display:none" />
-      </div>
+    <div class="card" style="margin-bottom:16px">
+      <h3>Download a backup</h3>
+      <p class="hint">This server's shared database (<code>data/budgetbridge.db</code>) is already the one copy everyone works from — there's nothing to "sync" here. This button is just an offline snapshot: a single .xlsx of the current cost item groups, cost items, budget plan and notes (optionally every transaction), useful for a point-in-time backup, an audit trail, or sharing a read-only copy with someone who doesn't use BudgetBridge.</p>
+      <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="inc-tx" /> Include full transaction detail <span class="hint">(bigger file)</span></label>
+      <button class="btn btn-primary" id="export-wb">Download backup (.xlsx)</button>
     </div>
-    <div class="card" style="margin-top:16px">
-      <h3>How teams share this</h3>
-      <p class="hint">Everything in BudgetBridge lives only in this browser (no server, no login). For a team, the shared <b>.xlsx</b> on your drive is the source of truth — one person exports after editing the plan, everyone else imports to view the latest numbers. It's the same model as a shared Excel workbook: simple and works anywhere, but not real-time — two people editing the plan at the same moment can overwrite each other, so it works best with one budget owner per cycle. See the README for the full explanation and the upgrade path to a live-shared backend if you outgrow this.</p>
+    <div class="card">
+      <h3>Danger zone</h3>
+      <div class="stack">
+        <div>
+          <button class="btn btn-danger" id="clear-tx">Clear transactions only</button>
+          <p class="hint">Removes imported actuals/encumbrances for everyone but keeps cost item groups, cost items and the budget plan.</p>
+        </div>
+        <div>
+          <button class="btn btn-danger" id="wipe-all">Erase everything</button>
+          <p class="hint">Deletes all cost item groups, cost items, budget lines, notes and transactions for the whole team. Cannot be undone — download a backup first. (People's accounts are not affected.)</p>
+        </div>
+      </div>
     </div>
   `;
   body.querySelector("#export-wb").addEventListener("click", () => {
     const includeTx = body.querySelector("#inc-tx").checked;
     const wb = buildWorkbook({ categories: s.categories, projects: s.projects, budgetLines: s.budgetLines, transactions: s.transactions, planNotes: s.planNotes, meta: { exportedAt: new Date().toISOString(), fiscalYear: s.fiscalYear } }, includeTx);
-    downloadWorkbook(wb, `budgetbridge-workbook-FY${s.fiscalYear}.xlsx`);
-    toast("Workbook downloaded", "ok");
+    downloadWorkbook(wb, `budgetbridge-backup-FY${s.fiscalYear}.xlsx`);
+    toast("Backup downloaded", "ok");
   });
-  wireDropzone(body.querySelector("#dz-wb"), body.querySelector("#file-wb"), async (file) => {
-    try {
-      const wb = await readAnyWorkbook(file);
-      const parsed = parseBudgetBridgeWorkbook(wb);
-      if (!parsed) return toast("That doesn't look like a BudgetBridge workbook", "err");
-      if (!confirm("This replaces everything currently in this browser with the workbook's contents. Continue?")) return;
-      await Store.importWorkbookData(parsed);
-      toast("Workbook imported", "ok");
-      render(document.getElementById("view-root"));
-    } catch (err) {
-      console.error(err);
-      toast("Couldn't read that workbook: " + err.message, "err");
-    }
+  body.querySelector("#clear-tx").addEventListener("click", async () => {
+    if (!confirm("Remove all imported transactions for everyone?")) return;
+    await Store.clearTransactions();
+    toast("Transactions cleared", "ok");
+    rerender();
+  });
+  body.querySelector("#wipe-all").addEventListener("click", async () => {
+    if (!confirm("This deletes everything for the whole team. This cannot be undone. Continue?")) return;
+    await Store.wipeAll();
+    toast("All data erased", "ok");
+    rerender();
   });
 }
 
-// ---------------------------------------------------------------- structure
+// ---------------------------------------------------------------- structure (cost item groups & cost items)
 function renderStructure(body) {
   const s = Store.state;
+  const admin = Store.isAdmin;
+  const myCategoryIds = new Set(admin ? s.categories.map((c) => c.id) : s.me.assignedCategoryIds);
+  const visibleCategories = admin ? s.categories : s.categories.filter((c) => myCategoryIds.has(c.id));
+
   body.innerHTML = `
+    ${admin ? `
     <div class="card" style="margin-bottom:16px">
       <div class="field-row" style="justify-content:space-between">
         <h3 style="margin:0">Cost item groups</h3>
@@ -285,101 +295,240 @@ function renderStructure(body) {
           <td><button class="btn btn-sm btn-danger" data-del-cat="${c.id}">Delete</button></td>
         </tr>`).join("")}</tbody>
       </table></div>
-    </div>
+    </div>` : `
+    <div class="card" style="margin-bottom:16px">
+      <p class="hint">You manage: <b>${[...myCategoryIds].map((id) => s.categories.find((c) => c.id === id)?.name).filter(Boolean).join(", ") || "no cost item groups yet — ask an admin to assign you one"}</b>. You can add, rename or remove cost items within those groups below. Everyone can see the whole rollup on the Dashboard and Budget vs. Actual — you just can't edit outside your own group(s).</p>
+    </div>`}
     <div class="card">
-      <h3>Cost items</h3>
+      <div class="field-row" style="justify-content:space-between">
+        <h3 style="margin:0">Cost items</h3>
+        ${!admin && visibleCategories.length ? `<button class="btn btn-sm" id="add-proj-mgr">+ Add cost item</button>` : ""}
+      </div>
       <div class="table-scroll" style="margin-top:10px"><table class="data-table">
         <thead><tr><th>Name</th><th>Code</th><th>Cost item group</th><th></th></tr></thead>
-        <tbody>${s.projects.map((p) => `<tr>
-          <td><input type="text" value="${escapeHtml(p.name)}" data-rename-proj="${p.code}" /></td>
+        <tbody>${s.projects.map((p) => {
+          const canEdit = Store.canEditCategory(p.categoryId);
+          return `<tr>
+          <td><input type="text" value="${escapeHtml(p.name)}" data-rename-proj="${p.code}" ${canEdit ? "" : "disabled title=\"Managed by another user\""} /></td>
           <td class="badge-soft">${p.code}</td>
-          <td><select data-recat="${p.code}">${s.categories.map((c) => `<option value="${c.id}" ${c.id === p.categoryId ? "selected" : ""}>${c.name}</option>`).join("")}</select></td>
-          <td><button class="btn btn-sm btn-danger" data-del-proj="${p.code}">Delete</button></td>
+          <td>${admin
+            ? `<select data-recat="${p.code}">${s.categories.map((c) => `<option value="${c.id}" ${c.id === p.categoryId ? "selected" : ""}>${c.name}</option>`).join("")}</select>`
+            : escapeHtml(s.categories.find((c) => c.id === p.categoryId)?.name || "—")}</td>
+          <td>${canEdit ? `<button class="btn btn-sm btn-danger" data-del-proj="${p.code}">Delete</button>` : ""}</td>
+        </tr>`;
+        }).join("")}</tbody>
+      </table></div>
+    </div>
+  `;
+  body.querySelector("#add-cat")?.addEventListener("click", () => addCategoryModal());
+  body.querySelector("#add-proj-mgr")?.addEventListener("click", () => addProjectPrompt(visibleCategories));
+  body.querySelectorAll("[data-rename-cat]").forEach((inp) => inp.addEventListener("change", async () => {
+    await Store.renameCategory(inp.dataset.renameCat, inp.value.trim());
+    toast("Saved", "ok");
+  }));
+  body.querySelectorAll("[data-del-cat]").forEach((b) => b.addEventListener("click", async () => {
+    try { await Store.deleteCategory(b.dataset.delCat); rerender(); }
+    catch (e) { toast(e.message, "err"); }
+  }));
+  body.querySelectorAll("[data-rename-proj]").forEach((inp) => inp.addEventListener("change", async () => {
+    try { await Store.updateProject(inp.dataset.renameProj, { name: inp.value.trim() }); toast("Saved", "ok"); }
+    catch (e) { toast(e.message, "err"); }
+  }));
+  body.querySelectorAll("[data-recat]").forEach((sel) => sel.addEventListener("change", async () => {
+    try { await Store.updateProject(sel.dataset.recat, { categoryId: sel.value }); toast("Saved", "ok"); }
+    catch (e) { toast(e.message, "err"); }
+  }));
+  body.querySelectorAll("[data-del-proj]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("Delete this cost item and its budget lines?")) return;
+    try { await Store.deleteProject(b.dataset.delProj); rerender(); }
+    catch (e) { toast(e.message, "err"); }
+  }));
+}
+
+function addCategoryModal() {
+  openModal(`
+    <h2>Add cost item group</h2>
+    <div class="field"><label>Name</label><input type="text" id="new-cat-name" placeholder="e.g. Digital Marketing" /></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-cat">Add cost item group</button></div>
+  `, {
+    onMount: (modal, close) => {
+      modal.querySelector("[data-close]").addEventListener("click", close);
+      modal.querySelector("#save-cat").addEventListener("click", async () => {
+        const name = modal.querySelector("#new-cat-name").value.trim();
+        if (!name) return toast("Enter a name", "err");
+        await Store.upsertCategory({ name });
+        close(); rerender();
+      });
+    },
+  });
+}
+
+function addProjectPrompt(categories) {
+  const catOptions = categories.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+  openModal(`
+    <h2>Add cost item</h2>
+    <div class="field"><label>Name</label><input type="text" id="new-proj-name" placeholder="e.g. Radio Sponsorships" /></div>
+    <div class="field" style="margin-top:8px"><label>Code (unique)</label><input type="text" id="new-proj-code" placeholder="e.g. RAD-100" /></div>
+    ${categories.length > 1 ? `<div class="field" style="margin-top:8px"><label>Cost item group</label><select id="new-proj-cat">${catOptions}</select></div>` : ""}
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-proj">Add cost item</button></div>
+  `, {
+    onMount: (modal, close) => {
+      modal.querySelector("[data-close]").addEventListener("click", close);
+      modal.querySelector("#save-proj").addEventListener("click", async () => {
+        const name = modal.querySelector("#new-proj-name").value.trim();
+        let code = modal.querySelector("#new-proj-code").value.trim();
+        const categoryId = categories.length > 1 ? modal.querySelector("#new-proj-cat").value : categories[0].id;
+        if (!name) return toast("Enter a name", "err");
+        if (!code) code = slugify(name).toUpperCase();
+        if (Store.state.projects.some((p) => p.code === code)) return toast("That code is already in use", "err");
+        try { await Store.upsertProject({ code, name, categoryId }); close(); rerender(); }
+        catch (e) { toast(e.message, "err"); }
+      });
+    },
+  });
+}
+
+// ---------------------------------------------------------------- users & access (admin)
+async function renderAccess(body) {
+  body.innerHTML = `<p class="hint">Loading…</p>`;
+  const users = await Store.loadUsers();
+  const cats = Store.state.categories;
+  body.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="field-row" style="justify-content:space-between">
+        <h3 style="margin:0">People</h3>
+        <button class="btn btn-sm" id="add-user">+ Add person</button>
+      </div>
+      <p class="hint">An <b>admin</b> can edit anything and manage people. A <b>manager</b> can only edit the cost item group(s) assigned to them below, but can see the full consolidated rollup like everyone else.</p>
+      <div class="table-scroll" style="margin-top:10px"><table class="data-table">
+        <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Manages</th><th>Active</th><th></th></tr></thead>
+        <tbody>${users.map((u) => `<tr>
+          <td>${escapeHtml(u.name)}</td>
+          <td class="badge-soft">${escapeHtml(u.username)}</td>
+          <td><select data-role="${u.id}" ${u.id === Store.state.me.id ? "disabled title=\"You can't change your own role\"" : ""}>
+            <option value="manager" ${u.role === "manager" ? "selected" : ""}>Manager</option>
+            <option value="admin" ${u.role === "admin" ? "selected" : ""}>Admin</option>
+          </select></td>
+          <td>${u.role === "admin" ? `<span class="hint">everything</span>` : `<button class="btn btn-sm" data-assign="${u.id}">${u.assignedCategoryIds.length ? `${u.assignedCategoryIds.length} group(s)` : "None — assign"}</button>`}</td>
+          <td><input type="checkbox" data-active="${u.id}" ${u.active ? "checked" : ""} ${u.id === Store.state.me.id ? "disabled" : ""} /></td>
+          <td><button class="btn btn-sm" data-reset="${u.id}">Reset password</button>${u.id === Store.state.me.id ? "" : ` <button class="btn btn-sm btn-danger" data-del-user="${u.id}">Delete</button>`}</td>
         </tr>`).join("")}</tbody>
       </table></div>
     </div>
   `;
-  body.querySelector("#add-cat").addEventListener("click", () => {
-    const name = prompt("Cost item group name?");
-    if (name && name.trim()) Store.upsertCategory({ name: name.trim() }).then(() => render(document.getElementById("view-root")));
-  });
-  body.querySelectorAll("[data-rename-cat]").forEach((inp) => inp.addEventListener("change", async () => {
-    await Store.upsertCategory({ id: inp.dataset.renameCat, name: inp.value.trim() });
-    toast("Saved", "ok");
+  body.querySelector("#add-user").addEventListener("click", () => addUserModal());
+  body.querySelectorAll("[data-role]").forEach((sel) => sel.addEventListener("change", async () => {
+    await Store.updateUser(sel.dataset.role, { role: sel.value });
+    toast("Saved", "ok"); rerender();
   }));
-  body.querySelectorAll("[data-del-cat]").forEach((b) => b.addEventListener("click", async () => {
-    try { await Store.deleteCategory(b.dataset.delCat); render(document.getElementById("view-root")); }
-    catch (e) { toast(e.message, "err"); }
+  body.querySelectorAll("[data-active]").forEach((cb) => cb.addEventListener("change", async () => {
+    await Store.updateUser(cb.dataset.active, { active: cb.checked });
+    toast(cb.checked ? "Account re-enabled" : "Account disabled", "ok");
   }));
-  body.querySelectorAll("[data-rename-proj]").forEach((inp) => inp.addEventListener("change", async () => {
-    const proj = Store.state.projects.find((p) => p.code === inp.dataset.renameProj);
-    await Store.upsertProject({ ...proj, name: inp.value.trim() });
-    toast("Saved", "ok");
-  }));
-  body.querySelectorAll("[data-recat]").forEach((sel) => sel.addEventListener("change", async () => {
-    const proj = Store.state.projects.find((p) => p.code === sel.dataset.recat);
-    await Store.upsertProject({ ...proj, categoryId: sel.value });
-    toast("Saved", "ok");
-  }));
-  body.querySelectorAll("[data-del-proj]").forEach((b) => b.addEventListener("click", async () => {
-    if (!confirm("Delete this cost item and its budget lines?")) return;
-    await Store.deleteProject(b.dataset.delProj);
-    render(document.getElementById("view-root"));
+  body.querySelectorAll("[data-assign]").forEach((b) => b.addEventListener("click", () => assignmentsModal(b.dataset.assign, users, cats)));
+  body.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => resetPasswordModal(b.dataset.reset, users)));
+  body.querySelectorAll("[data-del-user]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("Delete this person's account? They will no longer be able to sign in.")) return;
+    await Store.deleteUser(b.dataset.delUser);
+    rerender();
   }));
 }
 
-// ---------------------------------------------------------------- storage / danger zone
-async function renderStorage(body) {
-  const s = Store.state;
-  const usage = await estimateUsage();
+function addUserModal() {
+  openModal(`
+    <h2>Add a person</h2>
+    <div class="field"><label>Full name</label><input type="text" id="u-name" placeholder="e.g. Kim Brown" /></div>
+    <div class="field" style="margin-top:8px"><label>Username</label><input type="text" id="u-username" placeholder="e.g. kbrown" /></div>
+    <div class="field" style="margin-top:8px"><label>Temporary password</label><input type="text" id="u-password" placeholder="At least 6 characters" /></div>
+    <div class="field" style="margin-top:8px"><label>Role</label><select id="u-role"><option value="manager">Manager</option><option value="admin">Admin</option></select></div>
+    <p class="hint" style="margin-top:8px">Give this password to them directly — they can change it themselves under My Account after signing in.</p>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-user">Add person</button></div>
+  `, {
+    onMount: (modal, close) => {
+      modal.querySelector("[data-close]").addEventListener("click", close);
+      modal.querySelector("#save-user").addEventListener("click", async () => {
+        const name = modal.querySelector("#u-name").value.trim();
+        const username = modal.querySelector("#u-username").value.trim();
+        const password = modal.querySelector("#u-password").value;
+        const role = modal.querySelector("#u-role").value;
+        if (!name || !username || !password) return toast("Fill in every field", "err");
+        try { await Store.createUser({ name, username, password, role }); close(); rerender(); }
+        catch (e) { toast(e.message, "err"); }
+      });
+    },
+  });
+}
+
+function assignmentsModal(userId, users, categories) {
+  const user = users.find((u) => u.id === userId);
+  openModal(`
+    <h2>Cost item groups for ${escapeHtml(user.name)}</h2>
+    <p class="hint">${escapeHtml(user.name)} will be able to edit budget, notes and cost items only in the groups checked below.</p>
+    <div class="stack" style="gap:6px;margin-top:10px">
+      ${categories.map((c) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" value="${c.id}" ${user.assignedCategoryIds.includes(c.id) ? "checked" : ""} /> ${escapeHtml(c.name)}</label>`).join("") || `<p class="hint">No cost item groups exist yet.</p>`}
+    </div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-assign">Save</button></div>
+  `, {
+    onMount: (modal, close) => {
+      modal.querySelector("[data-close]").addEventListener("click", close);
+      modal.querySelector("#save-assign").addEventListener("click", async () => {
+        const categoryIds = [...modal.querySelectorAll('input[type="checkbox"]:checked')].map((c) => c.value);
+        await Store.setUserAssignments(userId, categoryIds);
+        toast("Saved", "ok");
+        close(); rerender();
+      });
+    },
+  });
+}
+
+function resetPasswordModal(userId, users) {
+  const user = users.find((u) => u.id === userId);
+  openModal(`
+    <h2>Reset password for ${escapeHtml(user.name)}</h2>
+    <div class="field"><label>New password</label><input type="text" id="new-pw" placeholder="At least 6 characters" /></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="do-reset">Reset</button></div>
+  `, {
+    onMount: (modal, close) => {
+      modal.querySelector("[data-close]").addEventListener("click", close);
+      modal.querySelector("#do-reset").addEventListener("click", async () => {
+        const pw = modal.querySelector("#new-pw").value;
+        if (pw.length < 6) return toast("Password must be at least 6 characters", "err");
+        await Store.updateUser(userId, { password: pw });
+        toast("Password reset", "ok");
+        close();
+      });
+    },
+  });
+}
+
+// ---------------------------------------------------------------- my account (everyone)
+function renderAccount(body) {
+  const me = Store.state.me;
   body.innerHTML = `
-    <div class="grid two-col">
-      <div class="card">
-        <h3>What's in this browser right now</h3>
-        <table class="data-table" style="margin-top:8px">
-          <tbody>
-            <tr><td>Cost item groups</td><td class="num">${s.categories.length}</td></tr>
-            <tr><td>Cost items</td><td class="num">${s.projects.length}</td></tr>
-            <tr><td>Budget line entries</td><td class="num">${s.budgetLines.length}</td></tr>
-            <tr><td>Transaction lines</td><td class="num">${s.transactions.length.toLocaleString()}</td></tr>
-            ${usage ? `<tr><td>Estimated browser storage used</td><td class="num">${formatBytes(usage.usage || 0)}</td></tr>` : ""}
-          </tbody>
-        </table>
-        <p class="hint" style="margin-top:10px">All of this lives in this browser's local database (IndexedDB) — it isn't sent anywhere. Clearing your browser's site data for this page, or using a different browser/device, starts empty. Export a workbook regularly if you want a backup outside the browser.</p>
-      </div>
-      <div class="card">
-        <h3>Danger zone</h3>
-        <div class="stack">
-          <div>
-            <button class="btn btn-danger" id="clear-tx">Clear transactions only</button>
-            <p class="hint">Removes imported actuals/encumbrances but keeps your cost item groups, cost items and budget plan.</p>
-          </div>
-          <div>
-            <button class="btn btn-danger" id="wipe-all">Erase everything</button>
-            <p class="hint">Deletes all cost item groups, cost items, budget lines and transactions from this browser. Cannot be undone — export a workbook first if you want a copy.</p>
-          </div>
-        </div>
-      </div>
+    <div class="card" style="max-width:440px">
+      <h3>Signed in as ${escapeHtml(me.name)}</h3>
+      <p class="hint">Username <span class="badge-soft">${escapeHtml(me.username)}</span> · Role <span class="badge-soft">${me.role === "admin" ? "Admin" : "Manager"}</span></p>
+      <hr class="hr" />
+      <h3>Change your password</h3>
+      <div class="field"><label>Current password</label><input type="password" id="old-pw" /></div>
+      <div class="field" style="margin-top:8px"><label>New password</label><input type="password" id="new-pw" placeholder="At least 6 characters" /></div>
+      <button class="btn btn-primary" style="margin-top:12px" id="change-pw">Update password</button>
+      <hr class="hr" />
+      <button class="btn btn-danger" id="do-logout">Log out</button>
     </div>
   `;
-  body.querySelector("#clear-tx").addEventListener("click", async () => {
-    if (!confirm("Remove all imported transactions?")) return;
-    await Store.clearTransactions();
-    toast("Transactions cleared", "ok");
-    render(document.getElementById("view-root"));
+  body.querySelector("#change-pw").addEventListener("click", async () => {
+    const oldPassword = body.querySelector("#old-pw").value;
+    const newPassword = body.querySelector("#new-pw").value;
+    try {
+      await Store.changeOwnPassword(oldPassword, newPassword);
+      toast("Password updated", "ok");
+      body.querySelector("#old-pw").value = ""; body.querySelector("#new-pw").value = "";
+    } catch (e) { toast(e.message, "err"); }
   });
-  body.querySelector("#wipe-all").addEventListener("click", async () => {
-    if (!confirm("This deletes everything in this browser. This cannot be undone. Continue?")) return;
-    await Store.wipeAll();
-    toast("All data erased", "ok");
-    render(document.getElementById("view-root"));
+  body.querySelector("#do-logout").addEventListener("click", async () => {
+    await Store.logout();
   });
 }
 
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
-
-function formatBytes(n) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}

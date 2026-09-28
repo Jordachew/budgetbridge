@@ -1,5 +1,5 @@
 import { Store } from "../store.js";
-import { aggregateActuals, budgetByProject, buildComparisonRows, grandTotal, fmtMoney, fmtPct, MONTH_NAMES, STATUS_LABEL } from "../calc.js";
+import { aggregateActuals, budgetByProject, buildComparisonRows, computeRunRate, grandTotal, fmtMoney, fmtPct, MONTH_NAMES, STATUS_LABEL } from "../calc.js";
 import { statusChip, meterBar, kpiCard } from "../ui.js";
 import { budgetActualBarChart, monthlyTrendChart, rankedBarChart, statusColor } from "../charts.js";
 import { icon } from "../icons.js";
@@ -18,7 +18,7 @@ export function render(root) {
     return;
   }
 
-  const rr = computePortfolioRunRate(rows);
+  const rr = computeRunRate(total.byMonth.actual, total.byMonth.encumbrance, total.budget, asOf);
   const pctUsed = total.budget > 0 ? total.committed / total.budget : null;
   const paceExpected = asOf / 12;
 
@@ -38,7 +38,7 @@ export function render(root) {
       ${kpiCard({ label: "Actual spend (YTD)", value: "$" + fmtMoney(total.actual, { compact: true }), sub: `Through ${MONTH_NAMES[asOf - 1]} · ${fmtPct(paceExpected)} of year elapsed`, icon: "trend", iconColor: "var(--series-3)", sparkline: monthlyActualToDate.length > 1 ? monthlyActualToDate : null })}
       ${kpiCard({ label: "Encumbered / committed", value: "$" + fmtMoney(total.encumbrance, { compact: true }), sub: "Open POs & obligations", icon: "inbox", iconColor: "var(--series-2)" })}
       ${kpiCard({ label: "Remaining balance", value: "$" + fmtMoney(total.balance, { compact: true }), sub: pctUsed != null ? `${fmtPct(pctUsed)} of budget committed` : "No budget set", icon: "scale", iconColor: "var(--series-6)" })}
-      ${kpiCard({ label: "Projected year-end spend", value: "$" + fmtMoney(rr.projectedAnnual, { compact: true }), sub: rr.hasBudget ? `${rr.projectedVariancePct >= 0 ? "+" : ""}${fmtPct(rr.projectedVariancePct)} vs budget at current run-rate` : "No budget set", deltaText: rr.hasBudget ? STATUS_LABEL[rr.status] : null, deltaGood: rr.status === "good", icon: "chart", iconColor: projectedStatusColor, sparkline: cumCommittedToDate.length > 1 ? cumCommittedToDate : null })}
+      ${kpiCard({ label: "Projected year-end spend", value: "$" + fmtMoney(rr.projectedAnnual, { compact: true }), sub: rr.hasBudget ? (rr.overBudgetNow ? `Already $${fmtMoney(rr.overBudgetAmount, { compact: true })} over budget` : `${rr.projectedVariancePct >= 0 ? "+" : ""}${fmtPct(rr.projectedVariancePct)} vs budget at current run-rate`) : "No budget set", deltaText: rr.hasBudget ? STATUS_LABEL[rr.status] : null, deltaGood: rr.status === "good", icon: "chart", iconColor: projectedStatusColor, sparkline: cumCommittedToDate.length > 1 ? cumCommittedToDate : null })}
     </div>
 
     <div class="grid two-col">
@@ -93,22 +93,15 @@ export function render(root) {
   });
 }
 
-function computePortfolioRunRate(rows) {
-  // aggregate run-rate numbers across all category rows (already computed per-row)
-  let ytdActual = 0, projectedAnnual = 0, budget = 0;
-  for (const r of rows) { ytdActual += r.runRate.ytdActual; projectedAnnual += r.runRate.projectedAnnual; budget += r.budget; }
-  const hasBudget = budget > 0;
-  const projectedVariancePct = hasBudget ? (projectedAnnual - budget) / budget : null;
-  const status = hasBudget ? (projectedVariancePct <= 0.02 ? "good" : projectedVariancePct <= 0.10 ? "warning" : projectedVariancePct <= 0.25 ? "serious" : "critical") : "unbudgeted";
-  return { ytdActual, projectedAnnual, hasBudget, projectedVariancePct, status };
-}
-
 function watchList(rows) {
   const flat = [];
   for (const cat of rows) {
     for (const p of cat.projects) {
       if (!p.runRate.hasBudget) continue;
-      flat.push({ label: p.name, code: p.code, categoryId: cat.id, pct: p.runRate.projectedVariancePct, status: p.runRate.status, projected: p.runRate.projectedAnnual, budget: p.budget });
+      flat.push({
+        label: p.name, code: p.code, categoryId: cat.id, pct: p.runRate.projectedVariancePct, status: p.runRate.status,
+        projected: p.runRate.projectedAnnual, budget: p.budget, overBudgetNow: p.runRate.overBudgetNow, overBudgetAmount: p.runRate.overBudgetAmount,
+      });
     }
   }
   flat.sort((a, b) => b.pct - a.pct);
@@ -119,7 +112,7 @@ function watchList(rows) {
     <div class="field-row" style="justify-content:space-between; align-items:center; gap:8px" data-drill="${f.categoryId}::${f.code}" role="button">
       <div style="min-width:0">
         <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.label}</div>
-        <div style="font-size:11.5px;color:var(--text-muted)">Projected $${fmtMoney(f.projected, { compact: true })} vs $${fmtMoney(f.budget, { compact: true })} budget</div>
+        <div style="font-size:11.5px;color:var(--text-muted)">${f.overBudgetNow ? `Already $${fmtMoney(f.overBudgetAmount, { compact: true })} over its $${fmtMoney(f.budget, { compact: true })} budget` : `Projected $${fmtMoney(f.projected, { compact: true })} vs $${fmtMoney(f.budget, { compact: true })} budget`}</div>
       </div>
       ${statusChip(f.status)}
     </div>`).join("")}</div>`;

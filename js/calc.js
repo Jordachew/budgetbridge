@@ -119,6 +119,9 @@ export function computeRunRate(actualByMonth, encumbranceByMonth, budgetTotal, a
   const monthsElapsed = Math.max(1, asOfMonth);
   const ytdActual = actualByMonth.slice(0, monthsElapsed).reduce((a, b) => a + b, 0);
   const ytdEncumbrance = (encumbranceByMonth || []).slice(0, monthsElapsed).reduce((a, b) => a + b, 0);
+  // What's already on the books, spent or committed via an open PO — the
+  // baseline every "over budget" check below is measured against.
+  const committedToDate = ytdActual + ytdEncumbrance;
   const avgMonthly = ytdActual / monthsElapsed;
 
   const last3Start = Math.max(0, monthsElapsed - 3);
@@ -126,21 +129,36 @@ export function computeRunRate(actualByMonth, encumbranceByMonth, budgetTotal, a
   const avgMonthlyTrend = last3Slice.length ? last3Slice.reduce((a, b) => a + b, 0) / last3Slice.length : avgMonthly;
 
   const remainingMonths = Math.max(0, 12 - monthsElapsed);
-  const projectedAnnual = ytdActual + avgMonthly * remainingMonths;
-  const projectedAnnualTrend = ytdActual + avgMonthlyTrend * remainingMonths;
+  // Year-end projection = what's already committed (actual spend + open
+  // POs) plus continued spending at the recent pace for the months left.
+  // Open encumbrances are real dollars already on the hook, so a line with
+  // a large open PO and little invoiced spend still projects correctly —
+  // ignoring them (as an actual-only projection would) can make a line
+  // that's already over budget on paper look "on track".
+  const projectedAnnual = committedToDate + avgMonthly * remainingMonths;
+  const projectedAnnualTrend = committedToDate + avgMonthlyTrend * remainingMonths;
 
   const hasBudget = budgetTotal > 0;
   const projectedVariance = hasBudget ? projectedAnnual - budgetTotal : projectedAnnual;
   const projectedVariancePct = hasBudget ? projectedVariance / budgetTotal : null;
-  const status = statusFromVariance(hasBudget ? projectedVariancePct : 0, hasBudget);
+
+  // A hard, immediate flag — separate from the projection: has this line
+  // already spent or committed more than its full budget, right now?
+  const overBudgetNow = hasBudget && committedToDate > budgetTotal;
+  const overBudgetAmount = overBudgetNow ? committedToDate - budgetTotal : 0;
+  const status = overBudgetNow ? "critical" : statusFromVariance(hasBudget ? projectedVariancePct : 0, hasBudget);
 
   const paceExpected = monthsElapsed / 12;
-  const paceActual = hasBudget ? ytdActual / budgetTotal : null;
+  const paceActual = hasBudget ? committedToDate / budgetTotal : null;
+  // Ahead of a straight-line pace by more than 10 points of budget —
+  // an early warning even when the full-year projection still looks fine.
+  const aheadOfPace = hasBudget && paceActual - paceExpected > 0.10;
 
   return {
-    monthsElapsed, ytdActual, ytdEncumbrance, avgMonthly, avgMonthlyTrend,
+    monthsElapsed, ytdActual, ytdEncumbrance, committedToDate, avgMonthly, avgMonthlyTrend,
     remainingMonths, projectedAnnual, projectedAnnualTrend,
     hasBudget, projectedVariance, projectedVariancePct, status,
+    overBudgetNow, overBudgetAmount, aheadOfPace,
     paceExpected, paceActual,
   };
 }
