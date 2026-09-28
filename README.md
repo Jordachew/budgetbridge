@@ -2,11 +2,13 @@
 
 A budget, planning and run-rate tool for a marketing / corporate-communications
 team — budget vs. actual comparison, spend visualizations, year-end run-rate
-forecasting, and transaction-level drill-down into your actuals.
+forecasting (including open commitments), and transaction-level drill-down
+into your actuals.
 
-It's a static web app: no server, no build step, no install. Open `index.html`
-in a browser and it works — including fully offline, since Chart.js and
-SheetJS are vendored in `vendor/` rather than loaded from a CDN.
+It runs as a small local-network server: one person starts it, everyone else
+on the same office/VPN network opens it in a browser. There's no cloud
+account, no external database, and no per-seat licensing — just Node.js and
+a single SQLite file.
 
 ## What it does
 
@@ -17,9 +19,11 @@ SheetJS are vendored in `vendor/` rather than loaded from a CDN.
   with budget/actual/encumbered/committed/balance and a status chip per
   line, search, filter and CSV export.
 - **Run Rate & Forecast** — for the whole portfolio or any single cost item:
-  projected year-end spend = year-to-date actual + (average monthly actual ×
-  remaining months), compared to budget, with a status of On track / Watch /
-  At risk / Over budget.
+  projected year-end spend = committed-to-date (actual + open encumbrances)
+  + (average monthly actual × remaining months), compared to budget. A line
+  already over budget — even just from open POs, before any invoice posts —
+  is flagged **Over budget** immediately, not just when the year-end
+  projection crosses the line.
 - **Drill-Down** — cost item group → cost item → every underlying
   transaction (invoice, purchase order, credit memo, journal entry — see
   "Document type" below), with search, vendor/type filters, sorting,
@@ -27,10 +31,11 @@ SheetJS are vendored in `vendor/` rather than loaded from a CDN.
 - **Planning** — an editable budget-input grid (monthly or quarterly) per
   cost item, with add/remove cost item groups and cost items, a note field
   per cost item per fiscal year, and a "copy from another fiscal year"
-  helper.
-- **Data & Settings** — import actuals, import a budget template, export/
-  import a shareable workbook, manage cost item groups/cost items, and see
-  exactly what's stored and where (see below).
+  helper. Every manager's entries roll up into the same shared plan the
+  moment they save — there's nothing to merge or reconcile afterward.
+- **Data & Settings** — import actuals, import a budget template, manage
+  cost item groups/cost items, manage who can sign in and what they can
+  edit, and download an offline backup.
 
 ### Document type (invoices, POs, credit memos, journal entries)
 
@@ -41,138 +46,170 @@ Filter by it alongside vendor and actual/encumbered basis, so you can see,
 for example, just the open purchase orders against a cost item, or just its
 posted invoices.
 
-## Do you need a database?
+## How data is stored, and why
 
-No — and here's the reasoning, since it drives how this tool is built:
+**One shared SQLite database file, on the machine running the server.**
+There's no cloud dependency and nothing to sync — every manager's browser
+reads and writes the same file over your local network, so a budget number
+one manager enters is visible to everyone else (and rolled into portfolio
+totals) as soon as they save it. This is what makes the "multiple managers,
+one consolidated budget" requirement work without a manual merge step: the
+server is the one source of truth, not each person's browser.
 
-**Everything runs in your browser.** BudgetBridge stores its data in
-IndexedDB, a local database built into every browser. There's no server, no
-login, no data leaving your machine. This is enough for one person exploring
-or maintaining the numbers.
+**Why not just a shared Excel file or a browser-only tool?** Two or more
+people editing the same workbook at once overwrite each other's changes, and
+a browser-only (IndexedDB) tool keeps each person's data trapped in their
+own browser with no way to roll up automatically. A tiny local server avoids
+both problems without requiring a cloud account, an IT ticket, or a
+recurring bill — it's just a Node.js process and a database file that live
+on a machine already on your network.
 
-**For a team, the shared file *is* the database.** Go to
-**Data & Settings → Share workbook → Export workbook** to download a single
-`.xlsx` with your cost item groups, cost items and budget plan (optionally with full
-transaction detail too). Save that file into a shared drive folder — Google
-Drive, OneDrive, SharePoint, whatever your team already uses. Everyone else
-opens BudgetBridge in their own browser and uses **Import workbook** to pull
-that file in. It's the same mental model as a shared Excel workbook that
-lives on a drive: simple, needs no IT setup, and works for any team size that
-doesn't need simultaneous editing.
+**Why not a hosted/cloud database?** Nothing about this design rules that
+out later — `server/db.js` is the only place that talks to storage, so
+swapping SQLite for Postgres or similar wouldn't touch the frontend at all.
+It just isn't necessary for a team working from one office/VPN network, and
+staying local-only means no data ever leaves your network and there's
+nothing to configure with an outside vendor.
 
-**The trade-off:** this is "pass-the-file" collaboration, not real-time
-co-editing. Two people editing the Planning grid at the same moment can
-overwrite each other, the same way two people editing an Excel file on
-OneDrive can. In practice this works well with a simple convention: one
-**Budget Owner** per planning cycle exports after each editing session;
-everyone else uses Import to view the latest numbers, or works off the CSV
-exports from Budget vs. Actual / Drill-Down for their own analysis.
+**Backups.** **Data & Settings → Backup → Download a backup** gives anyone
+(not just the admin) a point-in-time `.xlsx` snapshot of the cost item
+groups, cost items, budget plan and notes (optionally with full transaction
+detail) — useful for an audit trail, a read-only copy to email someone, or
+peace of mind. The database itself is a single file
+(`data/budgetbridge.db` by default); back it up the way you'd back up any
+important file on that machine.
 
-**If you outgrow that** (multiple people need to edit budget numbers at the
-same time, or you want a permanent audit trail of who changed what), the
-natural upgrade path is to swap the storage layer for something that supports
-concurrent writes — a Google Sheet via the Sheets API, or a small hosted
-database (e.g. Supabase/Postgres). `js/store.js` is the single place that
-talks to storage today (via `js/db.js`), so that swap wouldn't touch the
-views, charts or calculations at all. That's a deliberate design choice, not
-a missing feature — it just wasn't needed for the workflow described (a
-marketing team periodically updating a plan and reviewing actuals), so it
-wasn't built until it's actually needed.
+## Who can do what
 
-**Actuals refresh the same way budgets do:** re-run your GL/ERP export
-periodically and drop it into **Data & Settings → Import actuals**. Rows are
-matched by a stable transaction key, so importing the same file twice updates
-in place instead of duplicating.
+Every signed-in person can **see everything** — the whole portfolio, every
+cost item group, every manager's numbers — because the rollup view is the
+point. **Editing** is scoped:
 
-## Getting a shared copy running
+- **Admin** — full access: manage cost item groups, create/assign/remove
+  people, import actuals, run the danger-zone actions (clear transactions,
+  erase everything), and edit any budget line or cost item.
+- **Manager** — can edit budget numbers, notes, and cost items only within
+  the cost item group(s) an admin has assigned them to. Groups they don't
+  manage show as read-only ("view only") everywhere, including Planning —
+  so a manager sees the full company picture but can only change their own
+  piece of it.
 
-1. Go to **Data & Settings → Import actuals** and drop your GL/ERP export.
-   Recognized column headers (`Gl Accounts`, `Accounted Net`, `Gl Period`,
-   etc. — the shape of a typical Oracle/JDE-style GL extract) import
-   automatically. Anything else opens a one-time column-mapping step, so a
-   differently-shaped export still works.
-2. Set up your cost item groups and cost items in **Data & Settings →
-   Cost item groups & cost items** (or import an existing quarter/category
-   budget template from **Import actuals → Budget planning template**),
-   then enter numbers in **Planning**.
-3. Export a workbook (**Data & Settings → Share workbook**) and put it in a
-   shared drive folder. Send the folder's `index.html` + workbook location to
-   your team, or host the app (see below) and just share the workbook.
+An admin assigns managers to groups from **Data & Settings → Users &
+access**. There's no limit on how many managers can be assigned to a group,
+or how many groups one manager can own.
+
+## Running it
+
+Requires **Node.js 22.5 or later** (for the built-in `node:sqlite` module —
+no external database or npm dependencies to install).
+
+```bash
+npm start
+```
+
+That's it — no `npm install` step, no build step. The first time it runs,
+it creates `data/budgetbridge.db` and prints a freshly generated admin
+username and password to the terminal:
+
+```
+BudgetBridge server running at http://localhost:3000
+On your local network, other machines can reach it at http://<this-machine's-IP>:3000
+Database file: /path/to/budgetbridge/data/budgetbridge.db
+
+First run — an admin account was created:
+  Username: admin
+  Password: ••••••••
+Sign in and change this password (or create named accounts) right away.
+```
+
+Whoever runs `npm start` should note that password down (or change it
+immediately after signing in, from **Data & Settings → My account**) — it's
+only ever shown once, in that terminal output.
+
+**For everyone else on the team:** find the server machine's local network
+IP address (the terminal output prints it, or ask whoever started it) and
+open `http://<that-ip>:3000` in a browser. No install needed on their end —
+just a browser and access to the same network. The server needs to keep
+running (on that machine, or a small always-on machine/server on your
+network) for the app to stay reachable; if it's stopped, restarting it with
+`npm start` picks up right where the database left off — nothing is lost.
+
+### Configuration
+
+Both are optional environment variables:
+
+- `PORT` — which port to listen on (default `3000`).
+- `BUDGETBRIDGE_DATA_DIR` — where to store the database file (default
+  `./data` inside the project folder).
+
+```bash
+PORT=8080 BUDGETBRIDGE_DATA_DIR=/srv/budgetbridge-data npm start
+```
+
+### Getting your first data in
+
+1. Sign in as the seeded admin.
+2. **Data & Settings → Cost item groups & cost items** — set up your cost
+   item groups (e.g. "Advertising & Media") and cost items within them (or
+   import an existing quarter/category budget template from **Import
+   actuals → Budget planning template**).
+3. **Data & Settings → Users & access** — create an account for each
+   manager and assign them to the group(s) they own.
+4. Managers sign in and enter their numbers in **Planning** — everyone
+   (including the admin) sees the rollup immediately.
+5. **Data & Settings → Import actuals** — drop your GL/ERP export whenever
+   you want to refresh actuals. Recognized column headers (`Gl Accounts`,
+   `Accounted Net`, `Gl Period`, etc. — the shape of a typical Oracle/JDE
+   -style GL extract) import automatically; anything else opens a one-time
+   column-mapping step, so a differently-shaped export still works. Rows are
+   matched by a stable transaction key, so re-importing the same file
+   updates in place instead of duplicating.
 
 There is no sample or demo data anywhere in this build — the app starts
-empty and only ever shows what you import.
+empty and only ever shows what you enter or import.
 
-### Running it for real use
+## Project structure
 
-Any of these work, in increasing order of convenience:
+```
+server/
+  server.js              HTTP server, routing, session auth, all /api/* endpoints
+  db.js                   SQLite schema, first-run admin seeding
+  auth.js                 Sessions, cookies, permission checks
+index.html                App shell — loads vendor libs and js/app.bundle.js
+css/styles.css            Design tokens (light + dark) and component styles
+js/
+  app.bundle.js            The file index.html actually loads — a built,
+                            dependency-free bundle of everything below (see
+                            "Editing the source" if you change app.js/store.js/etc.)
+  app.js                   Router, sidebar/topbar, login screen, focus-safe re-rendering
+  api.js                   Fetch client for the server's /api/* endpoints
+  store.js                 Central state + persistence orchestration
+  parsers.js               Excel/CSV import (GL export, budget template)
+  calc.js                  Aggregation, run-rate and comparison math
+  charts.js                Chart.js styling helpers
+  ui.js                    Toasts, modals, small DOM helpers
+  views/                   One module per screen (dashboard, comparison, …)
+vendor/                   Chart.js + SheetJS (xlsx), vendored for offline use
+data/                      SQLite database lives here by default (git-ignored)
+```
 
-- **From a shared drive folder.** Put this whole project folder (or just
-  `index.html`, `css/`, `js/`, `vendor/`, `data/`) in the shared drive folder
-  alongside the exported workbook. Anyone opens `index.html` directly from
-  the synced folder — no server needed, works offline once synced.
-- **Hosted as a static site.** GitHub Pages, Netlify, Vercel, or an internal
-  web server — point it at this folder and it just works, since it's plain
-  HTML/CSS/JS with no build step to run at deploy time. This is nicer for
-  onboarding (one URL to share) but the data storage model is unchanged: each
-  visitor's browser is still the only place their imported data lives, and
-  the shared workbook is still how the team stays in sync.
+### Editing the source
 
-### SharePoint / OneDrive specifically
-
-Putting the folder in a SharePoint document library works — but only if you
-**sync that library to a local folder** (the "Sync" button in SharePoint, or
-via the OneDrive app) and open `index.html` from the synced local copy.
-Clicking `index.html` from SharePoint's browser interface *without* syncing
-generally won't run it — SharePoint Online previews or downloads HTML files
-instead of executing them, since most tenants disable custom script
-execution in document libraries for security. Once synced locally, it's a
-completely normal local file and works exactly as described above.
-
-### A note on how `index.html` loads its code
-
-Opening `index.html` straight from disk (double-clicking it, or opening it
-from a synced drive folder) works with **no server required** — but this
-depends on `index.html` loading a single pre-built script
-(`js/app.bundle.js`), not the individual `js/*.js` files directly. Browsers
-block ES module imports (`<script type="module">`) from the `file://`
-protocol for security, so if `index.html` referenced the source files
-directly, it would load a blank sidebar and silently do nothing when opened
-without a server — no visible error unless you check the browser console.
-This is also why, if you were serving an *older* copy of this project from a
-plain `file://` open and saw nothing happen, that was the cause.
-
-**If you edit the source** (anything under `js/`, other than
-`app.bundle.js` itself), rebuild the bundle before testing:
+`index.html` only ever loads `js/app.bundle.js`, a pre-built bundle — the
+individual `js/*.js` files exist for readability and editing, not to be
+loaded directly (browsers block ES module imports from being split across
+many files unless served with the right setup, and bundling sidesteps that
+entirely). If you edit anything under `js/` other than `app.bundle.js`
+itself, rebuild it before testing:
 
 ```bash
 npx esbuild js/app.js --bundle --outfile=js/app.bundle.js --format=iife --target=es2018
 ```
 
-`index.html` only ever loads `js/app.bundle.js`; the individual `js/*.js`
-files exist for readability and editing, not to be loaded directly.
-
-## Project structure
-
-```
-index.html            App shell — loads vendor libs and js/app.bundle.js
-css/styles.css         Design tokens (light + dark) and component styles
-js/
-  app.bundle.js           The file index.html actually loads — a built,
-                           dependency-free bundle of everything below (see
-                           "Editing the source" if you change app.js/store.js/etc.)
-  app.js                Router, sidebar/topbar, focus-safe re-rendering
-  store.js               Central state + persistence orchestration
-  db.js                   IndexedDB wrapper
-  parsers.js              Excel/CSV import (GL export, budget template, workbook)
-  calc.js                 Aggregation, run-rate and comparison math
-  charts.js                Chart.js styling helpers
-  ui.js                     Toasts, modals, small DOM helpers
-  views/                    One module per screen (dashboard, comparison, …)
-vendor/                 Chart.js + SheetJS (xlsx), vendored for offline use
-```
+The server (`server/server.js`) needs no build step — it's plain
+CommonJS Node.js, restart it (`npm start`) to pick up changes.
 
 ## Browser support
 
-Any current version of Chrome, Edge, Firefox or Safari. Requires IndexedDB
-(on by default everywhere except private/incognito windows in some
-browsers, where storage may be cleared when the window closes).
+Any current version of Chrome, Edge, Firefox or Safari, on any device that
+can reach the server machine over your local network.

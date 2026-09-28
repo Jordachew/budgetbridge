@@ -369,6 +369,7 @@ table.plan-grid input.cell-input {
   font: inherit; font-variant-numeric: tabular-nums; color: var(--text-primary);
 }
 table.plan-grid input.cell-input:focus { background: var(--accent-wash); outline: none; }
+table.plan-grid input.cell-input:disabled { color: var(--text-muted); cursor: not-allowed; }
 table.plan-grid td.total-cell { font-weight: 700; background: var(--surface-sunken); text-align: right; padding: 8px 10px; font-variant-numeric: tabular-nums; }
 table.plan-grid tr.category-row td { background: var(--surface-sunken); font-weight: 700; }
 
@@ -383,3 +384,9 @@ table.plan-grid tr.category-row td { background: var(--surface-sunken); font-wei
 .stack { display: flex; flex-direction: column; gap: 14px; }
 .hr { height: 1px; background: var(--border); margin: 16px 0; border: none; }
 code { background: var(--surface-sunken); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+/* ---------- login ---------- */
+.boot-loading { display: flex; align-items: center; justify-content: center; height: 100vh; color: var(--text-muted); font-size: 13px; }
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--page); }
+.login-card { width: 100%; max-width: 360px; padding: 28px 26px; }
+.login-error { font-size: 12.5px; color: var(--status-critical-text); background: color-mix(in srgb, var(--status-critical) 12%, transparent); border-radius: var(--radius-sm); padding: 8px 10px; margin-top: 12px; }

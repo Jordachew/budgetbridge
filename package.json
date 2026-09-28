@@ -1,0 +1,10 @@
+{
+  "name": "budgetbridge",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Marketing budget, planning and run-rate tool — runs on your local network, no cloud, no external dependencies.",
+  "engines": { "node": ">=22.5.0" },
+  "scripts": {
+    "start": "node server/server.js"
+  }
+}
