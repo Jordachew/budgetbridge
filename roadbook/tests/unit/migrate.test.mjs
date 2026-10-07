@@ -2,8 +2,8 @@ import 'fake-indexeddb/auto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import * as store from '../../app/js/store.js';
-import { migrateLocalToAccount, localHasData } from '../../app/js/migrate.js';
+import * as store from '../../src/core/store.js';
+import { migrateLocalToAccount, localHasData } from '../../src/core/migrate.js';
 
 test('local records move into the new account, paths rewritten, then local copy is cleared', async () => {
   const f = new IDBFactory();

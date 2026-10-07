@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 
 const SCHEMA = await readFile(new URL('../supabase/schema.sql', import.meta.url), 'utf8');
+const V2 = await readFile(new URL('../supabase/v2.sql', import.meta.url), 'utf8');
 
 const STUBS = `
   create role anon nologin;
@@ -73,6 +74,7 @@ before(async () => {
   db = new PGlite();
   await db.exec(STUBS);
   await db.exec(SCHEMA);
+  await db.exec(V2);
   U.alice = await signUp('Alice');   // fleet owner
   U.bob = await signUp('Bob');       // driver who shares
   U.carol = await signUp('Carol');   // outsider
@@ -84,8 +86,9 @@ before(async () => {
   await asUser(U.dave, () => q(`select public.rb_join_crew($1, false)`, [U.code.toLowerCase().replace(/^(....)/, '$1 - ')]));
 });
 
-test('schema can be applied a second time (idempotent)', async () => {
+test('schema and v2 can be applied a second time (idempotent)', async () => {
   await db.exec(SCHEMA);
+  await db.exec(V2);   // schema.sql resets table grants, so v2.sql is always run after it
 });
 
 test('a person can create their own profile, with the name they typed', async () => {
@@ -495,4 +498,70 @@ test('companies are isolated, and admins (dispatchers) work for their own compan
   await asUser(gina, () => q(`select public.rb_set_member_role($1,$2,'driver')`, [crewA, ivy]));
   await asUser(ivy, async () => assert.rejects(q(`select public.rb_crew_join_code($1)`, [crewA]), /Only the owner or an admin/));
   assert.ok(crewB);
+});
+
+/* ---------------- v2 tables ---------------- */
+test('v2: invoices, vehicles, maintenance, documents and places are private to their owner', async () => {
+  const id = uuid();
+  await asUser(U.bob, () => q(`insert into public.rb_invoices (id, number, issue_date, customer) values ($1, 'INV-1', current_date, 'Acme')`, [id]));
+  await asUser(U.bob, () => q(`insert into public.rb_vehicles (id, name) values ($1, 'Truck 1')`, [uuid()]));
+  await asUser(U.bob, () => q(`insert into public.rb_documents (id, title, kind) values ($1, 'Licence', 'licence')`, [uuid()]));
+  await asUser(U.bob, () => q(`insert into public.rb_places (id, name, lat, lng) values ($1, 'Depot', 18, -77)`, [uuid()]));
+  await asUser(U.bob, () => q(`insert into public.rb_maintenance (id, title, done_at) values ($1, 'Oil', now())`, [uuid()]));
+  for (const t of ['rb_invoices', 'rb_vehicles', 'rb_documents', 'rb_places', 'rb_maintenance']) {
+    await asUser(U.carol, async () => assert.equal((await q(`select * from public.${t}`)).rows.length, 0, `${t} leaked to an outsider`));
+    // a fleet owner is not shown a driver's invoices or vehicles even when the driver shares trips and expenses
+    await asUser(U.alice, async () => assert.equal((await q(`select * from public.${t}`)).rows.length, 0, `${t} leaked to the owner`));
+    await asAnon(async () => assert.ok(await deniedOrEmpty(q(`select * from public.${t}`)), t));
+  }
+  await asUser(U.carol, async () => assert.ok(await deniedOrEmpty(q(`update public.rb_invoices set status = 'paid' where id = $1`, [id]))));
+});
+
+test('v2: nobody can move a v2 row to another user or insert for someone else', async () => {
+  const id = uuid();
+  await asUser(U.bob, () => q(`insert into public.rb_vehicles (id, name) values ($1, 'Truck 2')`, [id]));
+  await asUser(U.bob, async () => assert.rejects(q(`update public.rb_vehicles set user_id = $1 where id = $2`, [U.carol, id])));
+  await asUser(U.bob, async () => assert.rejects(q(`insert into public.rb_vehicles (id, user_id, name) values ($1, $2, 'x')`, [uuid(), U.carol])));
+});
+
+test('v2: invoice constraints reject bad values', async () => {
+  await asUser(U.bob, async () => {
+    await assert.rejects(q(`insert into public.rb_invoices (id, number, issue_date, status) values ($1, 'X', current_date, 'bogus')`, [uuid()]));
+    await assert.rejects(q(`insert into public.rb_invoices (id, number, issue_date, tax_pct) values ($1, 'X', current_date, 150)`, [uuid()]));
+    await assert.rejects(q(`insert into public.rb_invoices (id, number, issue_date, items) values ($1, 'X', current_date, '{}'::jsonb)`, [uuid()]));
+  });
+});
+
+test('v2: a manager can prepare a settlement for a driver in their crew; driver can read it but not change it', async () => {
+  const id = uuid();
+  await asUser(U.alice, () => q(`insert into public.rb_settlements (id, crew_id, driver_id, period_from, period_to, gross_cents, net_cents) values ($1, $2, $3, '2026-01-01', '2026-01-07', 500000, 450000)`, [id, U.crew, U.bob]));
+  await asUser(U.bob, async () => assert.equal((await q(`select * from public.rb_settlements where id = $1`, [id])).rows.length, 1));
+  await asUser(U.bob, async () => assert.ok(await deniedOrEmpty(q(`update public.rb_settlements set net_cents = 999999 where id = $1`, [id]))));
+  await asUser(U.carol, async () => assert.equal((await q(`select * from public.rb_settlements where id = $1`, [id])).rows.length, 0));
+  // an outsider cannot prepare one for a driver who is not in their crew
+  await asUser(U.carol, async () => assert.rejects(q(`insert into public.rb_settlements (id, driver_id, period_from, period_to) values ($1, $2, '2026-01-01', '2026-01-07')`, [uuid(), U.bob])));
+  // end before start is refused
+  await asUser(U.alice, async () => assert.rejects(q(`insert into public.rb_settlements (id, crew_id, driver_id, period_from, period_to) values ($1, $2, $3, '2026-02-07', '2026-02-01')`, [uuid(), U.crew, U.bob])));
+});
+
+test('v2: updated_at is set by the server on v2 tables', async () => {
+  const id = uuid();
+  const r = await asUser(U.bob, () => q(`insert into public.rb_places (id, name, lat, lng, updated_at) values ($1, 'Pump', 18, -77, '2000-01-01') returning updated_at`, [id]));
+  assert.ok(new Date(r.rows[0].updated_at).getFullYear() >= 2025);
+});
+
+test('v2: delete_my_account also erases vehicles, invoices, maintenance, documents, places and settlements', async () => {
+  const fay = await signUp('Fay');
+  await asUser(fay, async () => {
+    await q(`insert into public.rb_vehicles (id, name) values ($1, 'V')`, [uuid()]);
+    await q(`insert into public.rb_invoices (id, number, issue_date) values ($1, 'I-1', current_date)`, [uuid()]);
+    await q(`insert into public.rb_maintenance (id, title, done_at) values ($1, 'M', now())`, [uuid()]);
+    await q(`insert into public.rb_documents (id, title) values ($1, 'D')`, [uuid()]);
+    await q(`insert into public.rb_places (id, name, lat, lng) values ($1, 'P', 1, 1)`, [uuid()]);
+    await q(`insert into public.rb_settlements (id, driver_id, period_from, period_to) values ($1, $2, '2026-01-01', '2026-01-02')`, [uuid(), fay]);
+    await q(`select public.rb_delete_my_account()`);
+  });
+  for (const t of ['rb_vehicles', 'rb_invoices', 'rb_maintenance', 'rb_documents', 'rb_places', 'rb_settlements']) {
+    assert.equal((await q(`select count(*)::int n from public.${t} where user_id=$1`, [fay])).rows[0].n, 0, t);
+  }
 });

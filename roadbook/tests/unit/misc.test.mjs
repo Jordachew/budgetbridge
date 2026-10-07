@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fmtMoney, parseMoney, fmtDistance, parseDistance, fmtDuration, plural, clip, initials } from '../../app/js/format.js';
-import { periodRange, addInterval, addDays } from '../../app/js/dates.js';
-import { haversine, bearing, compass, judgeFix, thinPath, pathLength, mapsLink, wazeLink } from '../../app/js/geo.js';
-import { csvCell, toCSV } from '../../app/js/csv.js';
-import { buildICS, icsEscape, fold } from '../../app/js/ics.js';
-import { sha256Hex, canonical, proofHash, verifyProof } from '../../app/js/hash.js';
-import { completeReminder, reminderState, nextDueDate, snoozePatch, fireTime } from '../../app/js/reminders-logic.js';
+import { fmtMoney, parseMoney, fmtDistance, parseDistance, fmtDuration, plural, clip, initials } from '../../src/core/format.js';
+import { periodRange, addInterval, addDays } from '../../src/core/dates.js';
+import { haversine, bearing, compass, judgeFix, thinPath, pathLength, mapsLink, wazeLink } from '../../src/core/geo.js';
+import { csvCell, toCSV } from '../../src/core/csv.js';
+import { buildICS, icsEscape, fold } from '../../src/core/ics.js';
+import { sha256Hex, canonical, proofHash, verifyProof } from '../../src/core/hash.js';
+import { completeReminder, reminderState, nextDueDate, snoozePatch, fireTime } from '../../src/core/reminders-logic.js';
 
 test('money format and parse', () => {
   assert.equal(fmtMoney(1245000), 'J$12,450');
@@ -126,7 +126,7 @@ test('reminders', () => {
   assert.equal(fireTime({ kind: 'date', due_at: '2026-10-03T13:00:00Z', lead_minutes: 60 }), new Date('2026-10-03T12:00:00Z').getTime());
   assert.equal(fireTime({ kind: 'km' }), null);
 });
-import { fromLocalInput, toLocalInput } from '../../app/js/format.js';
+import { fromLocalInput, toLocalInput } from '../../src/core/format.js';
 test('local date input round-trips in Jamaica time', () => {
   const d = fromLocalInput('2026-10-03T14:30');
   assert.ok(d instanceof Date); assert.equal(d.toISOString(), '2026-10-03T19:30:00.000Z');   // UTC-5, no daylight saving

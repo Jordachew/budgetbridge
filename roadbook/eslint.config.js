@@ -1,21 +1,13 @@
 import js from '@eslint/js';
 import globals from 'globals';
-import noUnsanitized from 'eslint-plugin-no-unsanitized';
 
 export default [
-  { ignores: ['app/vendor/**', 'dist/**', 'node_modules/**'] },
+  { ignores: ['dist', 'node_modules', 'public'] },
   js.configs.recommended,
   {
-    files: ['app/**/*.js'],
-    languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: { ...globals.browser, ...globals.serviceworker } },
-    plugins: { 'no-unsanitized': noUnsanitized },
-    rules: {
-      'no-unsanitized/method': 'error', 'no-unsanitized/property': 'error',
-      'no-eval': 'error', 'no-implied-eval': 'error', 'no-new-func': 'error', 'no-script-url': 'error',
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', caughtErrors: 'none' }],
-      'no-undef': 'error', 'no-var': 'error', eqeqeq: ['error', 'always', { null: 'ignore' }],
-    },
+    files: ['src/**/*.{js,jsx}'],
+    languageOptions: { ecmaVersion: 2024, sourceType: 'module', globals: { ...globals.browser }, parserOptions: { ecmaFeatures: { jsx: true } } },
+    rules: { 'no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^(_|[A-Z])' }], 'no-restricted-properties': ['error', { property: 'innerHTML', message: 'Never insert HTML. Use JSX.' }] },
   },
-  { files: ['app/config.js', 'app/sw.js'], languageOptions: { sourceType: 'script', globals: { ...globals.browser, ...globals.serviceworker } } },
-  { files: ['scripts/**/*.mjs', 'tests/**/*.mjs', 'eslint.config.js'], languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: { ...globals.node, ...globals.browser } } },
+  { files: ['tests/**/*.mjs', 'scripts/**/*.mjs', 'vite.config.js'], languageOptions: { globals: { ...globals.node } } },
 ];

@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createTracker } from '../../app/js/gps.js';
-import { alertSpeech, spokenDistance, reminderSpeech } from '../../app/js/phrases.js';
-import { fitSize } from '../../app/js/images.js';
+import { createTracker } from '../../src/core/gps.js';
+import { alertSpeech, spokenDistance, reminderSpeech } from '../../src/core/phrases.js';
+import { fitSize } from '../../src/core/images.js';
 
 function fakeGeo() {
   const g = { cb: null, err: null, cleared: false, watchPosition(ok, er) { g.cb = ok; g.err = er; return 7; }, clearWatch() { g.cleared = true; } };
@@ -59,7 +59,7 @@ test('fitSize', () => {
 });
 
 test('a parked truck with weak, jittery fixes adds no distance', async () => {
-  const { judgeFix } = await import('../../app/js/geo.js');
+  const { judgeFix } = await import('../../src/core/geo.js');
   let prev = { lat: 18.0, lng: -77.0, accuracy: 40, t: 0 };
   let total = 0;
   const jitter = [[0.0002, 0], [0, 0.0002], [-0.00015, 0.0001], [0.0001, -0.0002]];   // roughly 20 m wobbles

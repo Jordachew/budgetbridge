@@ -1,7 +1,7 @@
 name: Deploy Roadbook to GitHub Pages
 on:
   push:
-    branches: [main]
+    branches: [main, claude/app-packaging-deployment-xdhok6]
     paths: ['roadbook/**', '.github/workflows/roadbook-pages.yml']
   workflow_dispatch:
 permissions:
@@ -22,9 +22,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: roadbook/package-lock.json
+      - name: Install
+        working-directory: roadbook
+        run: npm ci
       - name: Build
         working-directory: roadbook
-        run: node scripts/build.mjs
+        run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
