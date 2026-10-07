@@ -3,7 +3,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContai
 import { Fuel } from 'lucide-react';
 import { Card, CardTitle, Stat, Empty, Table } from '../../components/ui.jsx';
 import { fuelEconomy, sumCents } from '../../core/calc.js';
-import { fmtDate, fmtMoney } from '../../core/format.js';
+import { fmtDate, fmtTime, fmtMoney } from '../../core/format.js';
 import { CATEGORY_COLORS } from '../../lib/categories.js';
 import { useMoney, useDistance } from '../../lib/hooks.js';
 
@@ -25,7 +25,7 @@ export default function FuelTab({ rows, cur, onOpen, onAdd }) {
   const litres = fills.reduce((a, f) => a + (f.litres || 0), 0);
   const withPpl = fills.filter((f) => f.ppl);
   const avgPpl = litres > 0 ? Math.round(sumCents(fills.filter((f) => f.litres > 0), cur) / fills.filter((f) => f.litres > 0).reduce((a, f) => a + f.litres, 0)) : null;
-  const data = withPpl.map((f) => ({ t: fmtDate(f.spent_at, { weekday: false }), ppl: f.ppl / 100 }));
+  const data = withPpl.map((f) => ({ t: `${fmtDate(f.spent_at, { weekday: false })} ${fmtTime(f.spent_at)}`, ppl: f.ppl / 100 }));
 
   if (!fills.length) {
     return <Empty icon={Fuel} title="No fuel fill-ups in this period" text="Add a fuel expense with litres and the odometer to see price per litre and your fuel economy." action={onAdd} />;
@@ -45,7 +45,7 @@ export default function FuelTab({ rows, cur, onOpen, onAdd }) {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={data} margin={{ left: 0, right: 12, top: 8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="currentColor" opacity={0.12} />
-                <XAxis dataKey="t" tick={{ fontSize: 11 }} stroke="currentColor" opacity={0.6} />
+                <XAxis dataKey="t" interval="preserveStartEnd" tick={{ fontSize: 11 }} stroke="currentColor" opacity={0.6} />
                 <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11 }} width={48} stroke="currentColor" opacity={0.6} />
                 <Tooltip formatter={(v) => [fmtMoney(Math.round(v * 100), cur), 'Per litre']} contentStyle={{ borderRadius: 12, fontSize: 12 }} />
                 <Line type="monotone" dataKey="ppl" stroke={CATEGORY_COLORS.fuel} strokeWidth={2.5} dot={{ r: 3 }} />

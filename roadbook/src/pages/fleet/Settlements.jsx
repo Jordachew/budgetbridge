@@ -51,7 +51,7 @@ function Editor({ crew, me, drivers, existing, onClose, onSaved }) {
     else if (f.to < f.from) e.period = 'The last day cannot be before the first day.';
     if (gross == null) e.gross = 'Enter the gross pay as an amount, like 120000.';
     if (dedCents.some((c, i) => c == null && ded[i].amount.trim() !== '')) e.ded = 'One of the deductions is not a valid amount.';
-    else if (ded.some((d, i) => d.amount.trim() !== '' && !d.label.trim())) e.ded = 'Give each deduction a name, like "Fuel card".';
+    else if (ded.some((d) => d.amount.trim() !== '' && !d.label.trim())) e.ded = 'Give each deduction a name, like "Fuel card".';
     setErr(e);
     if (Object.keys(e).length) return;
     setBusy(true);
