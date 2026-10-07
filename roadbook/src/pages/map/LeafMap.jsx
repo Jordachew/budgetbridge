@@ -67,7 +67,6 @@ export default function LeafMap({ markers = [], path, line, onMapClick, fitKey, 
     if (!pts.length && me) pts.push([me.lat, me.lng]);
     if (pts.length === 1) m.setView(pts[0], Math.max(m.getZoom(), 13));
     else if (pts.length > 1) m.fitBounds(L.latLngBounds(pts), { padding: [30, 30], maxZoom: 16 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitKey]);
 
   useEffect(() => {

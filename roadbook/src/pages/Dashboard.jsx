@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, Bell, CalendarClock, FileText, Fuel, PackageOpen, Plus, Receipt, Route as RouteIcon, Sparkles, TrendingDown, TrendingUp, Wallet, Gauge, Navigation } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Bell, CalendarClock, FileText, Fuel, PackageOpen, Receipt, Route as RouteIcon, Sparkles, TrendingDown, TrendingUp, Wallet, Gauge, Navigation } from 'lucide-react';
 import { useRows, useProfile } from '../state/data.js';
 import { useMoney, useCurrency, useDistance } from '../lib/hooks.js';
-import { Badge, Banner, Button, Card, CardTitle, Empty, PageHeader, Stat } from '../components/ui.jsx';
+import { Badge, Banner, Card, CardTitle, PageHeader, Stat } from '../components/ui.jsx';
 import { PeriodPicker, rangeOf } from '../components/PeriodPicker.jsx';
 import { byCategory, currentOdometer, fuelEconomy, otherCurrencyCount, sumCents, sumDistance, within } from '../core/calc.js';
 import { reminderState } from '../core/reminders-logic.js';
@@ -70,7 +70,6 @@ export default function Dashboard() {
       mixed: otherCurrencyCount(inc, cur) + otherCurrencyCount(exp, cur),
       economy: fuelEconomy(exp),
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [income, expenses, trips, cur, unit, period.kind, period.offset]);
 
   const now = NOW();
@@ -210,7 +209,6 @@ export default function Dashboard() {
 
       <h2 className="mb-3 text-sm font-semibold text-ink-500">Quick actions</h2>
       <QuickActions />
-      {!loads.length && !expenses.length && <div className="mt-6"><Empty title="Add your first expense or load" text="Your numbers appear above as soon as you log something." action={<Button as={Link} to="/expenses?new=1" icon={Plus}>Add expense</Button>} /></div>}
     </>
   );
 }

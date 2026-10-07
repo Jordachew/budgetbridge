@@ -14,7 +14,7 @@ export default function InvoicePrint({ inv, profile }) {
   return (
     <>
       <div className="no-print mb-4 flex justify-end"><Button icon={Printer} onClick={() => window.print()}>Print or save as PDF</Button></div>
-      <article className="print-area mx-auto w-full max-w-[210mm] rounded-2xl bg-white p-6 text-ink-900 shadow-sm ring-1 ring-ink-200 sm:p-12 print:max-w-none print:p-0 print:shadow-none print:ring-0" aria-label={`Invoice ${inv.number}`}>
+      <article className="print-area mx-auto w-full max-w-[210mm] rounded-2xl bg-white p-4 text-ink-900 shadow-sm ring-1 ring-ink-200 sm:p-12 print:max-w-none print:p-0 print:shadow-none print:ring-0" aria-label={`Invoice ${inv.number}`}>
         <header className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-brand-500 pb-6">
           <div>
             <h2 className="text-2xl font-bold tracking-tight">{businessName(profile)}</h2>
@@ -46,14 +46,14 @@ export default function InvoicePrint({ inv, profile }) {
         <div className="mt-8 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead><tr className="border-b border-ink-300 text-xs uppercase tracking-wide text-ink-500">
-              <th className="py-2 pr-3 font-semibold">Description</th><th className="px-3 py-2 text-right font-semibold">Qty</th><th className="px-3 py-2 text-right font-semibold">Unit price</th><th className="py-2 pl-3 text-right font-semibold">Amount</th>
+              <th className="py-2 pr-3 font-semibold">Description</th><th className="px-3 py-2 text-right font-semibold">Qty</th><th className="hidden px-3 py-2 text-right font-semibold sm:table-cell print:table-cell">Unit price</th><th className="py-2 pl-3 text-right font-semibold">Amount</th>
             </tr></thead>
             <tbody>
               {inv.items.map((it, i) => (
                 <tr key={i} className="border-b border-ink-100 align-top">
-                  <td className="py-2.5 pr-3">{it.description}</td>
+                  <td className="py-2.5 pr-3">{it.description}<span className="block text-xs text-ink-500 sm:hidden print:hidden">{m(it.unit_cents)} each</span></td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{it.qty}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{m(it.unit_cents)}</td>
+                  <td className="hidden px-3 py-2.5 text-right tabular-nums sm:table-cell print:table-cell">{m(it.unit_cents)}</td>
                   <td className="py-2.5 pl-3 text-right font-medium tabular-nums">{m(lineCents(it))}</td>
                 </tr>
               ))}
