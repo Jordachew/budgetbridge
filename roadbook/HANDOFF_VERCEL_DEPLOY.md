@@ -43,7 +43,7 @@ automatically and the other session never needs Vercel access again.
   is the real host because it can set the security headers (CSP, frame-ancestors, etc.).
 - Supabase project already referenced by the app: `jftbchpkltnzhxusyfiu` (public URL and publishable key
   only; never put a service_role key in the app).
-- A full rebuild of the UI (React + Vite + Tailwind: dashboard, loads, expenses, invoices and settlements,
+- The React rebuild (this PR) replaces the original plain-JavaScript UI.
   maps and fuel, maintenance and documents, fleet) is in progress on branch
   `claude/app-packaging-deployment-xdhok6` and will arrive on `main` through a pull request. Once Git
   auto-deploy is connected, that merge deploys it with no further steps. `roadbook/vercel.json` will be

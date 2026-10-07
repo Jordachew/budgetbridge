@@ -57,8 +57,8 @@ export default function CostsTab() {
               <YAxis tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
               <Tooltip formatter={tip} contentStyle={{ borderRadius: 12 }} />
               <Legend />
-              <Bar dataKey="service" name="Maintenance" stackId="a" fill={COLORS.service} />
-              <Bar dataKey="repair" name="Repairs" stackId="a" fill={COLORS.repair} radius={[4, 4, 0, 0]} />
+              <Bar isAnimationActive={false} dataKey="service" name="Maintenance" stackId="a" fill={COLORS.service} />
+              <Bar isAnimationActive={false} dataKey="repair" name="Repairs" stackId="a" fill={COLORS.repair} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -73,8 +73,8 @@ export default function CostsTab() {
               <YAxis type="category" dataKey="name" tick={axis} tickLine={false} axisLine={false} width={90} />
               <Tooltip formatter={tip} contentStyle={{ borderRadius: 12 }} />
               <Legend />
-              <Bar dataKey="service" name="Maintenance" stackId="a" fill={COLORS.service} />
-              <Bar dataKey="repair" name="Repairs" stackId="a" fill={COLORS.repair} radius={[0, 4, 4, 0]} />
+              <Bar isAnimationActive={false} dataKey="service" name="Maintenance" stackId="a" fill={COLORS.service} />
+              <Bar isAnimationActive={false} dataKey="repair" name="Repairs" stackId="a" fill={COLORS.repair} radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

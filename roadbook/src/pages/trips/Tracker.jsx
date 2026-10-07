@@ -71,7 +71,7 @@ export default function Tracker() {
     const Q = q.icon;
     const elapsed = Date.now() - new Date(st.started_at).getTime();
     return (
-      <Card className="mb-6 !border-0 bg-ink-900 text-white ring-0 dark:bg-ink-800">
+      <Card className="mb-6 !bg-ink-900 text-white !ring-0 dark:!bg-ink-800">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2"><span className="relative flex h-2.5 w-2.5"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" /><span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" /></span><span className="text-sm font-semibold">Trip in progress</span></div>
           <Badge tone={q.tone}><Q size={12} className="mr-1" />{q.text}</Badge>

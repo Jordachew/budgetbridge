@@ -35,10 +35,10 @@ function TripList() {
       <PageHeader title="Trips" sub="Record drives with GPS or log them from your odometer." actions={<Button icon={Plus} variant="outline" onClick={() => setForm('new')}>Add by odometer</Button>} />
       <Tracker />
       <div className="mb-4"><PeriodPicker value={period} onChange={setPeriod} /></div>
-      <div className="mb-4 grid grid-cols-3 gap-3">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat label="Distance" value={dist(total)} icon={RouteIcon} />
         <Stat label="Trips" value={list.length} icon={Satellite} />
-        <Stat label="Driving time" value={totalMs ? fmtDuration(totalMs) : '-'} icon={Gauge} />
+        <div className="col-span-2 sm:col-span-1"><Stat label="Driving time" value={totalMs ? fmtDuration(totalMs) : '-'} icon={Gauge} /></div>
       </div>
       {list.length === 0 ? (
         <Empty icon={RouteIcon} title="No trips in this period" text="Start a trip above, or add one from your odometer if you forgot to record it." action={<Button icon={Plus} onClick={() => setForm('new')}>Add a trip</Button>} />
