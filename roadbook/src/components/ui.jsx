@@ -1,5 +1,6 @@
 // Shared building blocks. Every screen uses these so the app looks like one product.
 import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Loader2, Inbox } from 'lucide-react';
 
 const cx = (...a) => a.filter(Boolean).join(' ');
@@ -170,7 +171,7 @@ export function Modal({ open, onClose, title, children, footer, wide }) {
     return () => { document.removeEventListener('keydown', k); document.body.style.overflow = ''; };
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink-950/50 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={ref} role="dialog" aria-modal="true" aria-label={title}
         className={cx('flex max-h-[92vh] w-full flex-col rounded-t-[14px] bg-[var(--surface)] shadow-2xl ring-1 ring-ink-200 dark:ring-ink-700 sm:rounded-[10px]', wide ? 'sm:max-w-3xl' : 'sm:max-w-lg')}>
@@ -181,7 +182,8 @@ export function Modal({ open, onClose, title, children, footer, wide }) {
         <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
         {footer && <div className="flex justify-end gap-2 border-t border-ink-200 px-5 py-3 pb-safe dark:border-ink-800">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 export function useConfirm() {

@@ -1,9 +1,8 @@
 import { useMemo } from 'react';
-import { Fuel, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
+import { Fuel, Plus, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
 import { Card, Empty, Button, cx } from '../../components/ui.jsx';
 import { Trend, Bars } from '../../components/charts/index.js';
 import { fuelEconomy, within } from '../../core/calc.js';
-import { addDays } from '../../core/dates.js';
 import { fmtDate, fmtTime, fmtMoney } from '../../core/format.js';
 import { useMoney, useDistance } from '../../lib/hooks.js';
 import Hero from './Hero.jsx';
@@ -22,7 +21,7 @@ function Change({ now, before, fmt }) {
  * Fuel log and charts. `all` = every fuel expense in the working currency; `range`/`kind` = the period chosen above.
  * Stats and the log follow the period. Charts look back far enough to show a trend (stated in their subtitles).
  */
-export default function FuelTab({ all, range, kind, cur, onOpen, onAdd }) {
+export default function FuelTab({ all, range, kind, cur, onOpen, onNew }) {
   const money = useMoney();
   const dist = useDistance();
 
@@ -59,7 +58,7 @@ export default function FuelTab({ all, range, kind, cur, onOpen, onAdd }) {
     for (const f of fills) { const m = out.find((x) => x.key === monthKey(f.at)); if (m) m.litres += f.raw.litres || 0; }
     return out;
   }, [fills, win, kind]);
-  const trendFills = useMemo(() => fills.filter((f) => f.ppl && f.at >= win.from && f.at < addDays(win.to, 0)), [fills, win]);
+  const trendFills = useMemo(() => fills.filter((f) => f.ppl && f.at >= win.from && f.at < win.to), [fills, win]);
 
   const litres = inPeriod.reduce((a, f) => a + (f.raw.litres || 0), 0);
   const spend = inPeriod.reduce((a, f) => a + f.raw.amount_cents, 0);
@@ -74,7 +73,7 @@ export default function FuelTab({ all, range, kind, cur, onOpen, onAdd }) {
   }, [inPeriod]);
 
   if (!all.length) {
-    return <Empty icon={Fuel} title="No fuel fill-ups yet" text="Log a fill with the litres and odometer to see your price per litre, how much fuel you buy each month and your fuel economy." action={onAdd} />;
+    return <Empty icon={Fuel} title="No fuel fill-ups yet" text="Log a fill with the litres and odometer to see your price per litre, how much fuel you buy each month and your fuel economy." action={<Button icon={Plus} onClick={onNew}>Log a fill-up</Button>} />;
   }
 
   const pplVals = trendFills.map((f) => f.ppl);
@@ -95,7 +94,7 @@ export default function FuelTab({ all, range, kind, cur, onOpen, onAdd }) {
         {trendFills.length >= 2 ? (
           <Trend title="Price per litre" subtitle={`Each fill-up, ${win.label}`} summary={trendSummary}
             data={trendFills.map((f, i) => ({ key: String(i), label: fmtDate(f.at, { weekday: false }), values: { ppl: f.ppl / 100 } }))}
-            series={[{ id: 'ppl', label: 'Price per litre', slot: 1 }]} min0={false}
+            series={[{ id: 'ppl', label: 'Price per litre', slot: 1 }]} tight area={false}
             format={(n) => fmtMoney(Math.round(n * 100), cur)} axisFormat={(n) => fmtMoney(Math.round(n * 100), cur)} />
         ) : (
           <Card><h3 className="font-display text-lg font-semibold">Price per litre</h3><p className="mt-2 text-sm text-ink-500">Log at least two fills with litres to see the price trend.</p></Card>
@@ -111,7 +110,7 @@ export default function FuelTab({ all, range, kind, cur, onOpen, onAdd }) {
           <span className="text-xs font-bold text-ink-500">{inPeriod.length} fill-up{inPeriod.length === 1 ? '' : 's'}</span>
         </div>
         {inPeriod.length === 0 ? (
-          <div className="p-5 text-sm text-ink-500">No fill-ups in this period. Pick another period above or <Button variant="ghost" size="sm" onClick={onAdd?.props?.onClick}>log one</Button>.</div>
+          <div className="p-5 text-sm text-ink-500">No fill-ups in this period. Pick another period above or <Button variant="ghost" size="sm" onClick={onNew}>log one</Button>.</div>
         ) : (
           <>
             <table className="hidden w-full border-collapse text-left text-sm md:table">

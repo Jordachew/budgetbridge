@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Modal, Button, Field, Input, Select, Segmented } from '../../components/ui.jsx';
+import { Field, Input, Select, Segmented } from '../../components/ui.jsx';
+import { FormModal } from '../maintenance/formKit.jsx';
 import { create, save } from '../../state/data.js';
 import { usePrefs } from '../../state/prefs.js';
 import { fmtDistance, parseDistance, toLocalInput, fromLocalInput } from '../../core/format.js';
@@ -8,13 +9,13 @@ import { useToast } from '../../components/toast.jsx';
 const LEADS = [{ v: 0, l: 'At the time' }, { v: 15, l: '15 minutes before' }, { v: 60, l: '1 hour before' }, { v: 1440, l: '1 day before' }, { v: 4320, l: '3 days before' }, { v: 10080, l: '1 week before' }];
 const num = (m, unit) => (m == null ? '' : String(Math.round((m / 1000 / (unit === 'mi' ? 1.609344 : 1)) * 10) / 10));
 
-export default function ReminderForm({ open, onClose, reminder, odometer }) {
+export default function ReminderForm({ open, onClose, reminder, odometer, initial }) {
   const { unit } = usePrefs();
   const toast = useToast();
   const editing = !!reminder?.id;
   const [f, setF] = useState(() => ({
-    title: reminder?.title || '', kind: reminder?.kind || 'date',
-    due: reminder?.due_at ? toLocalInput(reminder.due_at) : toLocalInput(new Date(Date.now() + 86400000)),
+    title: reminder?.title || initial?.title || '', kind: reminder?.kind || 'date',
+    due: reminder?.due_at ? toLocalInput(reminder.due_at) : toLocalInput(initial?.due || new Date(Date.now() + 86400000)),
     odo: num(reminder?.due_odometer_m, unit), repeat: reminder?.repeat || 'none', every: num(reminder?.repeat_every_m, unit), lead: reminder?.lead_minutes ?? 60,
   }));
   const [err, setErr] = useState({});
@@ -51,10 +52,9 @@ export default function ReminderForm({ open, onClose, reminder, odometer }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={editing ? 'Edit reminder' : 'New reminder'}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={busy} onClick={submit}>{editing ? 'Save changes' : 'Add reminder'}</Button></>}>
+    <FormModal open={open} onClose={onClose} title={editing ? 'Edit reminder' : 'New reminder'} submitLabel={editing ? 'Save changes' : 'Add reminder'} busy={busy} onSubmit={submit}>
       <div className="space-y-4">
-        <Field label="Remind me to" error={err.title}>{(id) => <Input id={id} value={f.title} maxLength={100} onChange={set('title')} placeholder="Renew insurance" />}</Field>
+        <Field label="Remind me to" error={err.title}>{(id) => <Input id={id} data-autofocus value={f.title} maxLength={100} onChange={set('title')} placeholder="Renew insurance" />}</Field>
         <Segmented value={f.kind} onChange={(kind) => setF({ ...f, kind })} options={[{ value: 'date', label: 'On a date' }, { value: 'km', label: 'At a distance' }]} />
         {f.kind === 'date' ? (
           <>
@@ -71,6 +71,6 @@ export default function ReminderForm({ open, onClose, reminder, odometer }) {
           </>
         )}
       </div>
-    </Modal>
+    </FormModal>
   );
 }

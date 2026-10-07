@@ -208,7 +208,7 @@ export default function ExpenseForm({ expense, preset = {}, onClose }) {
           <div className={cx('flex items-center gap-2 rounded-[10px] border-2 bg-[var(--surface)] px-4 focus-within:border-brand-500 focus-within:ring-4 focus-within:ring-brand-500/25', errors.amount ? 'border-[var(--bad)]' : 'border-ink-300 dark:border-ink-600')}>
             <span className="text-3xl font-bold text-ink-400" aria-hidden="true">{symbol}</span>
             <input id="ex-amount" inputMode="decimal" autoComplete="off" enterKeyHint="done" autoFocus={fine && !expense} placeholder="0" aria-invalid={!!errors.amount}
-              className="h-20 min-w-0 flex-1 bg-transparent text-5xl font-bold tabular-nums text-ink-900 outline-none placeholder:text-ink-300 dark:text-white" value={f.amount} onChange={(e) => set('amount', e.target.value)} />
+              className="h-20 min-w-0 flex-1 bg-transparent text-5xl font-bold tabular-nums text-ink-900 outline-none focus-visible:outline-none placeholder:text-ink-300 dark:text-white" value={f.amount} onChange={(e) => set('amount', e.target.value)} />
           </div>
           {errors.amount && <p role="alert" className="mt-1.5 text-sm font-bold text-[var(--bad)]">{errors.amount}</p>}
         </section>

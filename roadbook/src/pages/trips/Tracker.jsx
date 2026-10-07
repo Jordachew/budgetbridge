@@ -173,6 +173,7 @@ function Driving({ st, unit, dist, asking, setAsking, busy, finish }) {
   const path = useMemo(() => [...st.path], [n]);
   const speed = speedValue(st.speed_mps, unit);
   return (
+    <>
     <section aria-label="Trip in progress" className="mb-9 overflow-hidden rounded-[10px] bg-ink-950 text-white ring-1 ring-black/20 dark:bg-black/40 dark:ring-white/10">
       <div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-5 sm:px-7">
         <div className="flex items-center gap-2.5">
@@ -206,18 +207,19 @@ function Driving({ st, unit, dist, asking, setAsking, busy, finish }) {
         <p className="mt-3 text-center text-xs text-ink-400">Your screen stays on while the trip runs. Keep Roadbook open for best results.</p>
       </div>
 
-      <Modal open={asking} onClose={() => setAsking(false)} title="Stop this trip?"
-        footer={<><Button variant="ghost" onClick={() => setAsking(false)}>Keep driving</Button><Button variant="danger" icon={Square} loading={busy} onClick={() => finish(true)}>Stop and save</Button></>}>
-        <div className="space-y-4 text-ink-900 dark:text-ink-50">
-          <div className="grid grid-cols-2 divide-x divide-[var(--hairline)] rounded-md border border-[var(--hairline)] text-center">
-            <div className="p-3"><div className="text-2xl font-bold">{dist(st.distance_m)}</div><div className="text-xs text-ink-500">Distance</div></div>
-            <div className="p-3"><div className="text-2xl font-bold">{fmtClock(elapsed)}</div><div className="text-xs text-ink-500">Time</div></div>
-          </div>
-          {st.distance_m < 200 && <p className="text-sm text-ink-600 dark:text-ink-300">Almost no distance has been recorded. If you started by mistake, you can throw this trip away.</p>}
-          <Button variant="outline" size="sm" icon={Trash2} loading={busy} onClick={() => finish(false)}>Discard this trip</Button>
-        </div>
-      </Modal>
     </section>
+  <Modal open={asking} onClose={() => setAsking(false)} title="Stop this trip?"
+    footer={<><Button variant="ghost" onClick={() => setAsking(false)}>Keep driving</Button><Button variant="danger" icon={Square} loading={busy} onClick={() => finish(true)}>Stop and save</Button></>}>
+    <div className="space-y-4 text-ink-900 dark:text-ink-50">
+      <div className="grid grid-cols-2 divide-x divide-[var(--hairline)] rounded-md border border-[var(--hairline)] text-center">
+        <div className="p-3"><div className="text-2xl font-bold">{dist(st.distance_m)}</div><div className="text-xs text-ink-500">Distance</div></div>
+        <div className="p-3"><div className="text-2xl font-bold">{fmtClock(elapsed)}</div><div className="text-xs text-ink-500">Time</div></div>
+      </div>
+      {st.distance_m < 200 && <p className="text-sm text-ink-600 dark:text-ink-300">Almost no distance has been recorded. If you started by mistake, you can throw this trip away.</p>}
+      <Button variant="outline" size="sm" icon={Trash2} loading={busy} onClick={() => finish(false)}>Discard this trip</Button>
+    </div>
+  </Modal>
+    </>
   );
 }
 

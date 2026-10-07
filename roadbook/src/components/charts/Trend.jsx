@@ -7,13 +7,20 @@ const niceMax = (v) => { if (v <= 0) return 1; const p = 10 ** Math.floor(Math.l
 const H = 200, PAD = { t: 10, r: 14, b: 26, l: 46 };
 
 /** data=[{key,label,values:{id:number|null}}] series=[{id,label,slot?}] area: wash under a single series */
-export default function Trend({ data, series, format = String, axisFormat = format, title, subtitle, summary, area = series.length === 1, min0 = true }) {
+export default function Trend({ data, series, format = String, axisFormat = format, title, subtitle, summary, area = series.length === 1, min0 = true, tight = false }) {
   const [boxRef, width] = useWidth();
   const [idx, setIdx] = useState(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const w = Math.max(width, 240), plotW = w - PAD.l - PAD.r, plotH = H - PAD.t - PAD.b;
   const all = data.flatMap((d) => series.map((s) => d.values[s.id]).filter((v) => v != null));
-  const hi = niceMax(Math.max(0, ...all)), lo = min0 ? 0 : Math.min(...all, 0);
+  let hi = niceMax(Math.max(0, ...all)), lo = min0 ? 0 : Math.min(...all, 0);
+  if (tight && all.length) { // zoomed domain around the data (for prices that never get near zero): four even steps
+    const mn = Math.min(...all), mx = Math.max(...all), pad = ((mx - mn) || mx * 0.05 || 1) * 0.15;
+    let step = niceMax((mx - mn + 2 * pad) / 4);
+    lo = Math.floor((mn - pad) / step) * step;
+    while (lo + step * 4 < mx + pad / 2) step *= 2;
+    hi = lo + step * 4;
+  }
   const x = (i) => PAD.l + (data.length < 2 ? plotW / 2 : (i / (data.length - 1)) * plotW);
   const y = (v) => PAD.t + plotH - ((v - lo) / (hi - lo || 1)) * plotH;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => lo + (hi - lo) * f);

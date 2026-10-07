@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { Modal, Button, Field, Input, Select, Textarea } from '../../components/ui.jsx';
+import { Field, Input, Select, Textarea } from '../../components/ui.jsx';
+import { FormModal } from './formKit.jsx';
 import { create, save } from '../../state/data.js';
 import { parseDistance, parseMoney, toLocalInput, fromLocalInput, toDateInput, unitLabel } from '../../core/format.js';
 import { usePrefs } from '../../state/prefs.js';
@@ -58,12 +59,11 @@ export default function ServiceForm({ open, onClose, record, vehicles, defaultVe
   }
 
   return (
-    <Modal wide open={open} onClose={onClose} title={editing ? 'Edit service record' : 'Add a service record'}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={busy} onClick={submit}>{editing ? 'Save changes' : 'Add record'}</Button></>}>
+    <FormModal wide open={open} onClose={onClose} title={editing ? 'Edit service record' : 'Add a service record'} submitLabel={editing ? 'Save changes' : 'Add record'} busy={busy} onSubmit={submit}>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Vehicle">{(id) => <Select id={id} value={f.vehicle} onChange={set('vehicle')}><option value="">No vehicle</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</Select>}</Field>
         <Field label="Type">{(id) => <Select id={id} value={f.kind} onChange={set('kind')}>{KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}</Select>}</Field>
-        <Field label="What was done" error={err.title} className="sm:col-span-2">{(id) => <Input id={id} value={f.title} maxLength={100} onChange={set('title')} />}</Field>
+        <Field label="What was done" error={err.title} className="sm:col-span-2">{(id) => <Input id={id} data-autofocus value={f.title} maxLength={100} onChange={set('title')} placeholder="Oil and filter change" />}</Field>
         <Field label="Date done" error={err.done}>{(id) => <Input id={id} type="datetime-local" value={f.done} onChange={set('done')} />}</Field>
         <Field label={`Odometer (${unitLabel(unit)})`} error={err.odo}>{(id) => <Input id={id} inputMode="decimal" value={f.odo} onChange={set('odo')} />}</Field>
         <Field label="Cost" error={err.cost}>{(id) => (
@@ -81,6 +81,6 @@ export default function ServiceForm({ open, onClose, record, vehicles, defaultVe
           <div className="space-y-2"><input id={id} ref={file} type="file" accept="image/*,application/pdf" onChange={(e) => setPicked(e.target.files?.[0] || null)} className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-ink-100 file:px-3 file:py-2 file:text-sm file:font-medium dark:file:bg-ink-800" />
             {!picked && record?.receipt_path && <FileThumb path={record.receipt_path} name="Receipt" />}</div>)}</Field>
       </div>
-    </Modal>
+    </FormModal>
   );
 }

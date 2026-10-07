@@ -51,12 +51,12 @@ function MarkPaid({ inv }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   return (
-    <Button variant="soft" size="sm" icon={CheckCircle2} loading={busy} aria-label={`Mark ${inv.number} as paid in full`}
-      onClick={async () => { setBusy(true); try { paymentToast(toast, await recordPayment(inv, invoiceTotals(inv).balance), inv); } catch { toast('Could not record the payment.', { bad: true }); } setBusy(false); }}>Mark paid</Button>
+    <Button variant="soft" size="sm" icon={CheckCircle2} loading={busy} aria-label={`Mark ${inv.number} as paid in full`} title="Mark as paid in full"
+      onClick={async () => { setBusy(true); try { paymentToast(toast, await recordPayment(inv, invoiceTotals(inv).balance), inv); } catch { toast('Could not record the payment.', { bad: true }); } setBusy(false); }}><span className="md:hidden">Mark paid</span><span className="hidden md:inline">Paid</span></Button>
   );
 }
 
-const GRID = 'md:grid-cols-[9rem_minmax(0,1fr)_9.5rem_6.5rem_8.5rem_14rem]';
+const GRID = 'md:grid-cols-[8.5rem_minmax(0,1fr)_8.5rem_7.5rem_13.5rem]';
 
 function Row({ inv, all, today }) {
   const nav = useNavigate();
@@ -69,17 +69,18 @@ function Row({ inv, all, today }) {
     <li onClick={() => nav(`/invoices/${inv.id}`)} className={cx('grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-4 py-3.5 hover:bg-brand-50/70 dark:hover:bg-ink-800/50 md:py-3', GRID, st === 'void' && 'opacity-60')}>
       <div className="order-3 col-span-2 text-xs text-ink-500 md:order-none md:col-span-1">
         <Link to={`/invoices/${inv.id}`} onClick={stop} className="font-display text-base font-bold tracking-wide text-ink-900 hover:underline dark:text-white md:block">{inv.number}</Link>
-        <span className="md:hidden"> · </span>issued {fmtDay(inv.issue_date, false)}
+        <span className="md:hidden"> · </span><span className="md:hidden">issued {fmtDay(inv.issue_date, false)}</span>
+        <span className="mt-1 hidden md:block"><StatusBadge inv={inv} today={today} /></span>
       </div>
       <div className="order-1 min-w-0 md:order-none">
         <p className="truncate font-bold text-ink-900 dark:text-white">{inv.customer || 'No customer'}</p>
-        {inv.items?.[0]?.description && <p className="hidden truncate text-xs text-ink-500 md:block">{inv.items[0].description}{inv.items.length > 1 ? ` + ${inv.items.length - 1} more` : ''}</p>}
+        <p className="hidden truncate text-xs text-ink-500 md:block">issued {fmtDay(inv.issue_date, false)}{inv.items?.[0]?.description ? ` · ${inv.items[0].description}` : ''}{inv.items?.length > 1 ? ` + ${inv.items.length - 1} more` : ''}</p>
       </div>
       <div className="order-4 md:order-none">
         <p className={cx('text-sm font-bold', TONE_CLASS[due.tone])} title={inv.due_date ? `Due ${fmtDay(inv.due_date)}` : undefined}>{due.text}</p>
         {inv.due_date && st !== 'paid' && st !== 'void' && <p className="hidden text-xs text-ink-500 md:block">{fmtDay(inv.due_date, false)}</p>}
       </div>
-      <div className="order-5 justify-self-end md:order-none md:justify-self-start"><StatusBadge inv={inv} today={today} /></div>
+      <div className="order-5 justify-self-end md:hidden"><StatusBadge inv={inv} today={today} /></div>
       <div className="order-2 text-right md:order-none">
         <p className="text-lg font-bold leading-tight tabular-nums text-ink-900 dark:text-white md:text-base">{fmtMoney(partial ? t.balance : t.total, inv.currency)}</p>
         {partial && <p className="text-xs text-ink-500">of {fmtMoney(t.total, inv.currency)}</p>}
@@ -152,7 +153,7 @@ export default function Ledger({ invoices, cur, tab, setTab, q, setQ, age, setAg
       ) : (
         <>
           <div className={cx('mt-3 hidden gap-x-4 px-4 pb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-500 md:grid', GRID)} aria-hidden>
-            <span>Invoice</span><span>Customer</span><span>Due</span><span>Status</span><span className="text-right">Amount</span><span />
+            <span>Invoice</span><span>Customer</span><span>Due</span><span className="text-right">Amount</span><span />
           </div>
           <ul className="divide-y divide-[var(--hairline)] border-y border-[var(--hairline)] bg-[var(--surface)] md:rounded-[10px] md:border">
             {rows.map((i) => <Row key={i.id} inv={i} all={invoices} today={today} />)}

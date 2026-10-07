@@ -74,9 +74,12 @@ h1, h2, .font-display { font-family: var(--font-display); letter-spacing: 0.005e
 @keyframes sk { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } * { scroll-behavior: auto !important; transition-duration: 0.01ms !important; } }
 .page-enter { animation: pg .22s ease-out both; }
-@keyframes pg { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes pg { from { opacity: 0; } to { opacity: 1; } }
 
 @media print {
+  @page { size: A4; margin: 8mm; }
+  #root > div { display: block !important; }   /* Layout's sidebar grid collapses the page to one narrow column otherwise */
+  main { max-width: none !important; padding: 0 !important; }
   body { background: #fff !important; color: #000 !important; }
   .no-print { display: none !important; }
   .print-area { box-shadow: none !important; border: none !important; }

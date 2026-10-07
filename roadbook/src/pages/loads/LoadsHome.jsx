@@ -151,6 +151,8 @@ export default function LoadsHome() {
                 <Ic size={16} />{STATUS[s].label}<span className="rounded bg-ink-100 px-1.5 text-xs tabular-nums dark:bg-ink-800">{n}</span>
               </button>); })}
           </div>
+          <div className="relative">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-0 z-10 hidden w-10 bg-gradient-to-l from-[var(--paper)] to-transparent md:block" />
           <div className="flex gap-4 md:-mx-2 md:snap-x md:overflow-x-auto md:px-2 md:pb-4">
             {stages.map((s) => {
               const col = filtered.filter((l) => l.status === s);
@@ -169,6 +171,7 @@ export default function LoadsHome() {
                 </section>
               );
             })}
+          </div>
           </div>
         </>
       ) : (

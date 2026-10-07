@@ -79,9 +79,9 @@ export default function Detail() {
               {t.paid > 0 && t.balance > 0 && (
                 <div className="mt-4 max-w-sm"><Meter value={t.paid} max={t.total} label="Paid so far" warnAt={2} badAt={2} /><p className="mt-1 text-xs text-ink-500">{m(t.paid)} of {m(t.total)} received</p></div>
               )}
-              <div className="no-print mt-5 flex flex-wrap items-center gap-2">
-                {st === 'draft' && <><SendMenu inv={inv} size="lg" align="left" label="Send invoice" /><Button size="lg" variant="outline" onClick={() => markSent(inv, toast)}>Mark as sent</Button></>}
-                {openInv && <><Button size="lg" icon={Banknote} onClick={() => setPaying(true)}>Record payment</Button><Button size="lg" variant="soft" icon={CheckCircle2} loading={busy} onClick={markPaid}>Mark paid in full</Button><ChaseMenu invs={[inv]} size="lg" variant={st === 'overdue' ? 'primary' : 'outline'} align="left" /></>}
+              <div className="no-print mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                {st === 'draft' && <><SendMenu inv={inv} size="lg" align="left" label="Send invoice" block /><Button size="lg" className="w-full sm:w-auto" variant="outline" onClick={() => markSent(inv, toast)}>Mark as sent</Button></>}
+                {openInv && <><Button size="lg" className="w-full sm:w-auto" icon={Banknote} onClick={() => setPaying(true)}>Record payment</Button><Button size="lg" className="w-full sm:w-auto" variant="soft" icon={CheckCircle2} loading={busy} onClick={markPaid}>Mark paid in full</Button><ChaseMenu invs={[inv]} size="lg" variant={st === 'overdue' ? 'primary' : 'outline'} align="left" block /></>}
                 {st === 'paid' && <Button variant="outline" as={Link} to="/money">See it in your income</Button>}
               </div>
             </section>

@@ -1,5 +1,6 @@
 // Full-screen sheet on phones, centred panel on desktop. Header, scrolling body, pinned footer.
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cx } from '../../components/ui.jsx';
 
@@ -13,7 +14,8 @@ export default function Sheet({ title, eyebrow, onClose, children, footer, wide,
     return () => { document.removeEventListener('keydown', k); document.body.style.overflow = prev; };
   }, [onClose]);
   const Wrap = onSubmit ? 'form' : 'div';
-  return (
+  // portal: the page wrapper is animated (transform), which would otherwise trap a fixed sheet inside it
+  return createPortal(
     <div className="no-print fixed inset-0 z-50 flex items-end justify-center bg-ink-950/55 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <Wrap ref={ref} role="dialog" aria-modal="true" aria-label={title} noValidate={onSubmit ? true : undefined}
         onSubmit={onSubmit ? (e) => { e.preventDefault(); onSubmit(e); } : undefined}
@@ -29,6 +31,7 @@ export default function Sheet({ title, eyebrow, onClose, children, footer, wide,
         <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-5">{children}</div>
         {footer && <div className="flex items-center gap-2 border-t border-[var(--hairline)] bg-[var(--surface)] px-4 pb-safe pt-3 sm:rounded-b-[12px]">{footer}</div>}
       </Wrap>
-    </div>
+    </div>,
+    document.body,
   );
 }

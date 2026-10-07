@@ -19,7 +19,7 @@ export function Menu({ trigger, children, align = 'right', width = 'min-w-[13rem
     <div ref={ref} className={cx('relative inline-block text-left', className)} onClick={(e) => e.stopPropagation()}>
       {trigger({ open, toggle: () => setOpen((v) => !v) })}
       {open && (
-        <div role="menu" className={cx('absolute z-30 mt-1.5 rounded-[8px] border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl ring-1 ring-black/5', width, align === 'right' ? 'right-0' : 'left-0')}>
+        <div role="menu" className={cx('absolute z-30 mt-1.5 rounded-[8px] border border-[var(--hairline)] bg-[var(--surface)] p-1 shadow-xl ring-1 ring-black/5', width, align === 'right' ? 'right-0' : align === 'auto' ? 'left-0 lg:left-auto lg:right-0' : 'left-0')}>
           <Close.Provider value={() => setOpen(false)}>{children}</Close.Provider>
         </div>
       )}

@@ -16,8 +16,8 @@ export function WhoOwes({ invoices, cur, today = todayStr() }) {
   const clear = a.total === 0 && !otherText;
   return (
     <section aria-label="Who owes you" className="no-print overflow-hidden rounded-[10px] bg-ink-950 text-white ring-1 ring-black/20 dark:bg-ink-900 dark:ring-white/10">
-      <div className="grid lg:grid-cols-[1.15fr_1fr]">
-        <div className="p-6 md:p-8">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr]">
+        <div className="min-w-0 p-6 md:p-8">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-brand-400">Who owes you</p>
           <p className="mt-3 text-5xl font-bold leading-none tracking-tight sm:text-6xl" aria-label={`Outstanding ${fmtMoney(a.total, cur)}`}>{fmtMoney(a.total, cur)}</p>
           {clear ? (
@@ -40,17 +40,17 @@ export function WhoOwes({ invoices, cur, today = todayStr() }) {
           )}
         </div>
         {who.length > 0 && (
-          <div className="border-t border-white/10 p-6 md:p-8 lg:border-l lg:border-t-0">
+          <div className="min-w-0 border-t border-white/10 p-6 md:p-8 lg:border-l lg:border-t-0">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-ink-300">Chase first</p>
             <ul className="mt-3 divide-y divide-white/10">
               {who.slice(0, 3).map((d) => (
-                <li key={d.name} className="flex items-center gap-3 py-2.5">
-                  <div className="min-w-0 flex-1">
+                <li key={d.name} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+                  <div className="min-w-[8rem] flex-1">
                     <p className="truncate font-bold">{d.name}</p>
                     <p className={cx('text-xs', d.worst > 0 ? 'text-red-200' : 'text-ink-300')}>{d.worst > 0 ? `${plural(d.worst, 'day')} overdue` : 'Not due yet'} · {word(d.invs.length, 'invoice')}</p>
                   </div>
                   <span className="shrink-0 text-lg font-bold">{fmtMoney(d.cents, cur)}</span>
-                  <span className="shrink-0 [&_button]:border-white/30 [&_button]:text-white [&_button:hover]:bg-white/10"><ChaseMenu invs={d.invs} /></span>
+                  <span className="shrink-0 [&_button]:border-white/30 [&_button]:text-white [&_button:hover]:bg-white/10"><ChaseMenu invs={d.invs} align="auto" /></span>
                 </li>
               ))}
             </ul>

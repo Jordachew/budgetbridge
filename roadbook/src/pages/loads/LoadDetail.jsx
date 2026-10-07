@@ -34,7 +34,7 @@ const Leader = ({ label, value, strong, tone, sign }) => (
   <div className={cx('flex items-baseline gap-2 py-1.5', strong && 'text-base')}>
     <dt className={cx('shrink-0', strong ? 'font-bold' : 'text-ink-600 dark:text-ink-300')}>{label}</dt>
     <span aria-hidden="true" className="min-w-4 flex-1 translate-y-[-3px] border-b-2 border-dotted border-ink-300 dark:border-ink-600" />
-    <dd className={cx('shrink-0 font-bold tabular-nums', strong && 'text-xl', tone === 'bad' && 'text-[var(--bad)]', tone === 'good' && 'text-[var(--good)]')}>{sign}{value}</dd>
+    <dd className={cx('shrink-0 font-bold tabular-nums', strong && 'text-lg', tone === 'bad' && 'text-[var(--bad)]', tone === 'good' && 'text-[var(--good)]')}>{sign}{value}</dd>
   </div>
 );
 
@@ -53,7 +53,7 @@ function Ledger({ load, fin, money }) {
         <Leader label="Agreed rate" value={money(rate, load.currency)} />
         <Leader label="Expenses so far" value={money(fin.expenses, load.currency)} sign={fin.expenses ? '-' : ''} />
         <div className="mt-1 border-t-[3px] border-double border-ink-800 pt-1 dark:border-ink-300">
-          <Leader strong label="Profit at this rate" value={money(profit, load.currency)} tone={profit < 0 ? 'bad' : 'good'} />
+          <Leader strong label="Profit" value={money(profit, load.currency)} tone={profit < 0 ? 'bad' : 'good'} />
         </div>
       </dl>
       <div className="px-5 pb-4 pt-2">

@@ -18,7 +18,7 @@ export function pinIcon({ color = 'var(--series-2)', fg = '#fff', glyph = '', si
  * path: [[lat,lng,...],...]   line: same, drawn dashed (straight-line estimates)
  * fitKey: change it to re-fit the view to what is drawn.  focus: { lat, lng, n } flies there.
  */
-export default function LeafMap({ markers = [], path, line, onMapClick, fitKey, focus, me, height = 360, className = '', label = 'Map', zoomPosition = 'topleft', padding }) {
+export default function LeafMap({ markers = [], path, line, onMapClick, fitKey, focus, me, height = 360, className = '', label = 'Map', zoomPosition = 'topleft', inset }) {
   const host = useRef(null);
   const map = useRef(null);
   const layer = useRef(null);
@@ -73,8 +73,9 @@ export default function LeafMap({ markers = [], path, line, onMapClick, fitKey, 
     const m = map.current; if (!m) return;
     const pts = [...(m.__pts || [])];
     if (!pts.length && me) pts.push([me.lat, me.lng]);
-    if (pts.length === 1) m.setView(pts[0], Math.max(m.getZoom(), 13));
-    else if (pts.length > 1) m.fitBounds(L.latLngBounds(pts), { padding: padding || [30, 30], maxZoom: 16 });
+    const left = inset?.left || 0; const bottom = inset?.bottom || 0;
+    if (pts.length === 1) { m.setView(pts[0], Math.max(m.getZoom(), 13), { animate: false }); m.panBy([-left / 2, bottom / 2], { animate: false }); }
+    else if (pts.length > 1) m.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [30 + left, 30], paddingBottomRight: [30, 30 + bottom], maxZoom: 16 });
   }, [fitKey]);
 
   useEffect(() => {

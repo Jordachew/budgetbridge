@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { PackageOpen, Plus, Trash2, Send, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { Badge, Banner, Button, Card, Empty, Field, IconButton, Input, Modal, Select, Textarea } from '../../components/ui.jsx';
+import { ArrowRight, PackageOpen, Plus, Trash2, Send, CheckCircle2, AlertTriangle, FileCheck2 } from 'lucide-react';
+import { Badge, Banner, Button, Empty, Field, IconButton, Input, Modal, Select, Textarea } from '../../components/ui.jsx';
 import { useToast } from '../../components/toast.jsx';
 import { create, useRows } from '../../state/data.js';
 import { useCurrency } from '../../lib/hooks.js';
-import { fmtDateTime, fmtMoney, fromLocalInput, parseMoney } from '../../core/format.js';
+import { fmtDateTime, fmtMoney, fmtRelative, fromLocalInput, parseMoney } from '../../core/format.js';
+import { Avatar } from './shared.jsx';
+import { cx } from '../../components/ui.jsx';
 
 const STATUS = {
   booked: ['Booked', 'neutral'], picked_up: ['Picked up', 'blue'], in_transit: ['On the road', 'blue'],
@@ -90,45 +92,54 @@ export default function Dispatch({ ctx }) {
   const loads = useRows('loads');
   const deliveries = useRows('deliveries');
   const [open, setOpen] = useState(false);
+  const [who, setWho] = useState('all');
   const drivers = roster.filter((r) => r.role === 'driver');
-  const sent = loads.filter((l) => l.created_by === me && l.user_id !== me).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  const sent = loads.filter((l) => l.created_by === me && l.user_id !== me && (who === 'all' || l.user_id === who)).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  const done = (l) => ['delivered', 'reconciled', 'cancelled'].includes(l.status);
+  const live = sent.filter((l) => !done(l));
+  const past = sent.filter(done);
+
+  const Card = ({ l }) => {
+    const [label, tone] = STATUS[l.status] || [l.status, 'neutral'];
+    const proof = deliveries.filter((d) => d.load_id === l.id).sort((a, b) => (b.delivered_at || '').localeCompare(a.delivered_at || ''))[0];
+    return (
+      <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-3 px-5 py-4 md:grid-cols-[11rem_minmax(0,1fr)_auto]">
+        <div className="col-span-2 flex items-center gap-2.5 md:col-span-1"><Avatar name={nameOf(l.user_id)} size={32} /><div className="min-w-0"><p className="truncate text-sm font-bold">{nameOf(l.user_id)}</p><Badge tone={tone} className="mt-0.5">{label}</Badge></div></div>
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 font-bold"><span className="truncate">{l.pickup_label || '?'}</span><ArrowRight size={15} className="shrink-0 text-brand-600" aria-hidden /><span className="truncate">{l.drop_label || '?'}</span></p>
+          <p className="truncate text-xs text-ink-500">{l.customer || 'Load'}{l.reference ? ` · ${l.reference}` : ''}{l.drop_at ? ` · due ${fmtDateTime(l.drop_at)} (${fmtRelative(l.drop_at)})` : ''}</p>
+          <p className="mt-2 flex items-center gap-2 text-xs">
+            {proof ? <>{proof.has_discrepancy ? <AlertTriangle size={14} className="text-[var(--warn)]" /> : <FileCheck2 size={14} className="text-[var(--good)]" />}<span>Proof received {fmtDateTime(proof.delivered_at)}{proof.receiver_name ? ` · signed by ${proof.receiver_name}` : ''}{proof.has_discrepancy ? ' · items did not match' : ''}</span></>
+              : <span className="text-ink-500">{l.status === 'delivered' || l.status === 'reconciled' ? 'Delivered, proof not synced yet' : 'No proof of delivery yet'}</span>}
+          </p>
+        </div>
+        <p className="text-right text-lg font-bold tabular-nums">{fmtMoney(l.rate_cents, l.currency)}</p>
+      </li>
+    );
+  };
+  const List = ({ title, rows }) => rows.length > 0 && (
+    <section aria-label={title}>
+      <h2 className="mb-2 font-display text-xl font-semibold">{title} <span className="text-sm font-normal text-ink-500">{rows.length}</span></h2>
+      <ul className="divide-y divide-[var(--hairline)] overflow-hidden rounded-[10px] border border-[var(--hairline)] bg-[var(--surface)]">{rows.map((l) => <Card key={l.id} l={l} />)}</ul>
+    </section>
+  );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-ink-500">Send a load straight to a driver's phone. They update its status and add proof of delivery.</p>
+        <p className="max-w-xl text-sm text-ink-500">Send a load straight to a driver's phone. They update its status and add proof of delivery.</p>
         <Button icon={Plus} disabled={!drivers.length} onClick={() => setOpen(true)}>Dispatch a load</Button>
       </div>
-      {!drivers.length && <Banner tone="amber">No drivers have joined yet. Share your join code from the Overview tab first.</Banner>}
-      {!sent.length ? <Empty icon={PackageOpen} title="No dispatched loads" text="Loads you send to drivers show up here with their delivery status." />
-        : (
-          <ul className="space-y-3">
-            {sent.map((l) => {
-              const [label, tone] = STATUS[l.status] || [l.status, 'neutral'];
-              const proof = deliveries.filter((d) => d.load_id === l.id).sort((a, b) => (b.delivered_at || '').localeCompare(a.delivered_at || ''))[0];
-              return (
-                <li key={l.id}><Card className="!p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="font-semibold">{l.customer || 'Load'}{l.reference ? ` · ${l.reference}` : ''}</p>
-                      <p className="text-sm text-ink-500">{l.pickup_label || '?'} to {l.drop_label || '?'}</p>
-                      <p className="mt-1 text-xs text-ink-500">Driver: {nameOf(l.user_id)}{l.drop_at ? ` · due ${fmtDateTime(l.drop_at)}` : ''}</p>
-                    </div>
-                    <div className="text-right"><Badge tone={tone}>{label}</Badge><p className="mt-1 text-sm font-semibold tabular-nums">{fmtMoney(l.rate_cents, l.currency)}</p></div>
-                  </div>
-                  <div className="mt-3 flex items-center gap-2 border-t border-ink-100 pt-3 text-sm dark:border-ink-800">
-                    {proof ? (
-                      <>
-                        {proof.has_discrepancy ? <AlertTriangle size={16} className="text-amber-600" /> : <CheckCircle2 size={16} className="text-emerald-600" />}
-                        <span>Proof received {fmtDateTime(proof.delivered_at)}{proof.receiver_name ? ` · signed by ${proof.receiver_name}` : ''}{proof.has_discrepancy ? ' · items did not match' : ''}</span>
-                      </>
-                    ) : <span className="text-ink-500">{l.status === 'delivered' || l.status === 'reconciled' ? 'Delivered, proof not synced yet' : 'No proof of delivery yet'}</span>}
-                  </div>
-                </Card></li>
-              );
-            })}
-          </ul>
-        )}
+      {!drivers.length && <Banner tone="amber">No drivers have joined yet. Share your join code from the Drivers tab first.</Banner>}
+      {drivers.length > 1 && sent.length + (who === 'all' ? 0 : 1) > 0 && (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by driver">
+          {[{ id: 'all', name: 'Everyone' }, ...drivers.map((d) => ({ id: d.user_id, name: d.display_name }))].map((d) => (
+            <button key={d.id} type="button" aria-pressed={who === d.id} onClick={() => setWho(d.id)} className={cx('rounded-full px-3 py-1.5 text-sm font-bold ring-1', who === d.id ? 'bg-brand-500 text-ink-950 ring-brand-500' : 'bg-[var(--surface)] text-ink-700 ring-ink-300 dark:text-ink-200 dark:ring-ink-600')}>{d.name}</button>
+          ))}
+        </div>
+      )}
+      {!sent.length ? <Empty icon={PackageOpen} title="No dispatched loads" text="Loads you send to drivers show up here with their delivery status and proof." action={drivers.length ? <Button icon={Plus} onClick={() => setOpen(true)}>Dispatch a load</Button> : null} />
+        : <><List title="On the go" rows={live} /><List title="Finished" rows={past} /></>}
       {open && <NewLoad drivers={drivers} me={me} onClose={() => setOpen(false)} />}
     </div>
   );

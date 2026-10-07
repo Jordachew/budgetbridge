@@ -44,7 +44,7 @@ export default function PlaceForm({ onClose, place, onMyLocation }) {
     if (Object.keys(e).length) return;
     setBusy(true);
     try {
-      const { fuel: _f, ...rest } = place || {};
+      const { fuel: _f, away: _a, ...rest } = place || {};
       const row = { ...rest, name: name.slice(0, 100), kind: f.kind, lat, lng, note: f.note.trim().slice(0, 300), fuel_price_cents: f.kind === 'fuel' ? price : null };
       if (editing) await save('places', row); else await create('places', row);
       toast(editing ? 'Place updated.' : 'Place saved.');

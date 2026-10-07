@@ -3,14 +3,15 @@ import { LogOut, Pencil, Trash2, UserMinus, ShieldCheck, ShieldOff } from 'lucid
 import { Badge, Banner, Button, Card, CardTitle, Field, Input, Modal, Switch, useConfirm } from '../../components/ui.jsx';
 import { useToast } from '../../components/toast.jsx';
 import { session } from '../../state/app.jsx';
-import { fmtDate, initials } from '../../core/format.js';
+import { fmtDate } from '../../core/format.js';
+import { useRows } from '../../state/data.js';
 import { plainError } from './CrewStart.jsx';
-import { ROLE_LABEL, ROLE_TONE } from './Overview.jsx';
+import { ACTIVE_STATUS, Avatar, JoinCode, ROLE_LABEL, ROLE_TONE } from './shared.jsx';
 
 function EditCompany({ crew, onClose, onDone }) {
   const toast = useToast();
   const [name, setName] = useState(crew.name);
-  const [color, setColor] = useState(crew.brand_color || '#f97316');
+  const [color, setColor] = useState(crew.brand_color || '#f5b000');
   const [useColor, setUseColor] = useState(!!crew.brand_color);
   const [phone, setPhone] = useState(crew.phone || '');
   const [err, setErr] = useState('');
@@ -43,6 +44,7 @@ export default function Drivers({ ctx }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState('');
   const mine = roster.find((r) => r.user_id === me);
+  const loads = useRows('loads');
   const needOnline = () => { if (!online) { toast('You are offline. Try again when you have signal.', { bad: true }); return true; } return false; };
 
   async function run(key, fn, msg) {
@@ -67,20 +69,22 @@ export default function Drivers({ ctx }) {
   return (
     <div className="space-y-4">
       {!online && <Banner tone="amber">You are offline. You can look at the list, but changes need a connection.</Banner>}
-      <Card className="!p-0">
-        <div className="p-5 pb-2"><CardTitle title="Team" sub={`${roster.length} ${roster.length === 1 ? 'person' : 'people'} in ${crew.name}`} /></div>
-        <ul className="divide-y divide-ink-100 dark:divide-ink-800">
+      {isManager && <JoinCode crew={crew} online={online} />}
+      <section aria-label="Team" className="overflow-hidden rounded-[10px] border border-[var(--hairline)] bg-[var(--surface)]">
+        <div className="flex items-baseline justify-between border-b border-[var(--hairline)] px-5 py-3"><h2 className="font-display text-xl font-semibold">Team</h2><span className="text-sm text-ink-500">{roster.length} {roster.length === 1 ? 'person' : 'people'} in {crew.name}</span></div>
+        <ul className="divide-y divide-[var(--hairline)]">
           {roster.map((r) => {
             const self = r.user_id === me;
             const canKick = !self && r.role !== 'owner' && (isOwner || (isManager && r.role === 'driver'));
+            const live = loads.find((l) => l.user_id === r.user_id && ACTIVE_STATUS.includes(l.status));
             return (
-              <li key={r.user_id} className="flex flex-wrap items-center gap-3 px-5 py-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-600 dark:bg-ink-800 dark:text-ink-200" aria-hidden>{initials(r.display_name)}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2"><span className="truncate font-semibold">{r.display_name}{self ? ' (you)' : ''}</span><Badge tone={ROLE_TONE[r.role]}>{ROLE_LABEL[r.role]}</Badge></div>
-                  <p className="text-xs text-ink-500">Joined {fmtDate(r.joined_at, { weekday: false, year: true })}{r.role === 'driver' && r.share_data != null ? (r.share_data ? ' · shares records' : ' · does not share records') : ''}</p>
+              <li key={r.user_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
+                <Avatar name={r.display_name} size={44} mine={self} />
+                <div className="min-w-[11rem] flex-1">
+                  <div className="flex flex-wrap items-center gap-2"><span className="font-bold">{r.display_name}{self ? ' (you)' : ''}</span><Badge tone={ROLE_TONE[r.role]}>{ROLE_LABEL[r.role]}</Badge></div>
+                  <p className="text-xs text-ink-500">{live ? `On a load to ${live.drop_label || 'a delivery'}` : 'Not on a load'} · joined {fmtDate(r.joined_at, { weekday: false, year: true })}{r.role === 'driver' && r.share_data != null ? (r.share_data ? ' · shares records' : ' · does not share records') : ''}</p>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex w-full items-center gap-1 pl-[60px] sm:w-auto sm:pl-0">
                   {isOwner && !self && r.role === 'driver' && <Button variant="soft" size="sm" icon={ShieldCheck} loading={busy === r.user_id} onClick={() => setRole(r, 'admin')}>Make admin</Button>}
                   {isOwner && !self && r.role === 'admin' && <Button variant="soft" size="sm" icon={ShieldOff} loading={busy === r.user_id} onClick={() => setRole(r, 'driver')}>Make driver</Button>}
                   {canKick && <Button variant="ghost" size="sm" icon={UserMinus} aria-label={`Remove ${r.display_name}`} onClick={() => kick(r)}><span className="hidden sm:inline">Remove</span></Button>}
@@ -89,7 +93,7 @@ export default function Drivers({ ctx }) {
             );
           })}
         </ul>
-      </Card>
+      </section>
 
       {mine?.role === 'driver' && (
         <Card>
