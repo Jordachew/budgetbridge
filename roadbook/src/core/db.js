@@ -2,8 +2,9 @@
 // works with no signal. Each account (or the no-account "local" mode) gets its own database,
 // so two people sharing a phone never see each other's records.
 
-export const TABLES = ['loads', 'expenses', 'income', 'trips', 'deliveries', 'reminders', 'route_plans', 'messages', 'road_alerts'];
-export const SYNCED_UP = ['loads', 'expenses', 'income', 'trips', 'deliveries', 'reminders', 'route_plans', 'messages', 'road_alerts'];
+export const TABLES = ['loads', 'expenses', 'income', 'trips', 'deliveries', 'reminders', 'route_plans', 'messages', 'road_alerts',
+  'vehicles', 'invoices', 'maintenance', 'documents', 'places', 'settlements'];
+export const SYNCED_UP = TABLES;
 const FILES = 'files';
 const META = 'meta';
 
@@ -16,7 +17,7 @@ export class Db {
   constructor(idb, name) { this.idb = idb; this.name = name; }
 
   static async open(name, factory = globalThis.indexedDB) {
-    const open = factory.open(name, 1);
+    const open = factory.open(name, 2);
     open.onupgradeneeded = () => {
       const db = open.result;
       for (const t of TABLES) if (!db.objectStoreNames.contains(t)) db.createObjectStore(t, { keyPath: 'id' });

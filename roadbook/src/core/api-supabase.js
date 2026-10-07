@@ -28,7 +28,7 @@ export function makeApi(rawClient, uid) {
     channel: (n) => rawClient.channel(n),
     removeChannel: (c) => rawClient.removeChannel(c),
   };
-  const personal = new Set(['expenses', 'income', 'trips', 'reminders', 'route_plans']);
+  const personal = new Set(['expenses', 'income', 'trips', 'reminders', 'route_plans', 'vehicles', 'invoices', 'maintenance', 'documents', 'places']);
 
   const api = {
     client: rawClient,
@@ -52,6 +52,7 @@ export function makeApi(rawClient, uid) {
         let q = client.from(table).select('*');
         if (personal.has(table)) q = q.eq('user_id', uid);
         else if (table === 'loads') q = q.or(`user_id.eq.${uid},created_by.eq.${uid}`);
+        else if (table === 'settlements') q = q.or(`user_id.eq.${uid},driver_id.eq.${uid}`);
         if (since) q = q.gte('updated_at', since);
         else if (SHARED_TABLES.has(table)) q = q.gte('created_at', new Date(Date.now() - 30 * 864e5).toISOString());
         q = q.order('updated_at', { ascending: true }).order('id', { ascending: true }).range(from, from + PAGE - 1);
