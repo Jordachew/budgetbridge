@@ -88,7 +88,7 @@ function IncomeTab({ rows, loads, cur, range, period }) {
 
   return (
     <>
-      <div className="mb-4 grid grid-cols-3 gap-3">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Stat label="Total received" value={money(total)} />
         <Stat label="Pay" value={money(sumCents(list.filter((r) => r.kind === 'pay'), cur))} />
         <Stat label="Advances" value={money(sumCents(list.filter((r) => r.kind === 'advance'), cur))} />
@@ -141,7 +141,7 @@ function SettleTab({ income, expenses, loads, cur, range, period }) {
       ? `The company advanced you ${money(s.advances)} but you only spent ${money(s.driverPaid)} of your own money. ${money(-owed)} of that cash is still with you and should be handed back or carried to the next trip.`
       : `The ${money(s.advances)} advanced to you matches the ${money(s.driverPaid)} you spent. Nobody owes anybody.`;
 
-  const Line = ({ label, value, strong }) => <div className={`flex justify-between py-2 text-sm ${strong ? 'font-bold' : ''}`}><span>{label}</span><span className="tabular-nums">{value}</span></div>;
+  const Line = ({ label, value, strong }) => <div className={`flex justify-between py-2 text-sm ${strong ? 'font-bold' : ''}`}><span>{label}</span><span className="whitespace-nowrap tabular-nums">{value}</span></div>;
 
   return (
     <div className="space-y-4">
@@ -159,14 +159,14 @@ function SettleTab({ income, expenses, loads, cur, range, period }) {
       </Card>
 
       <Card>
-        <CardTitle title="By load" sub="Out of pocket versus advances for each load" />
+        <CardTitle title="By load" sub="Balance is paid by you minus advances. Positive means the company owes you; negative means you hold extra cash." />
         {perLoad.length === 0 && !hasLoose ? <p className="text-sm text-ink-500">Expenses and income are not linked to any load yet.</p> : (
           <div className="overflow-x-auto rounded-xl ring-1 ring-ink-200/70 dark:ring-ink-800">
             <table className="w-full text-left text-sm">
               <thead className="bg-ink-50 text-xs uppercase tracking-wide text-ink-500 dark:bg-ink-900/60"><tr><th className="px-4 py-2.5 font-medium">Load</th><th className="px-4 py-2.5 text-right font-medium">Paid by you</th><th className="px-4 py-2.5 text-right font-medium">Advances</th><th className="px-4 py-2.5 text-right font-medium">Balance</th></tr></thead>
               <tbody className="divide-y divide-ink-100 bg-white dark:divide-ink-800 dark:bg-ink-900">
-                {perLoad.map((r) => <tr key={r.l.id}><td className="px-4 py-3 font-medium">{[r.l.reference, r.l.customer].filter(Boolean).join(' · ') || 'Load'}</td><td className="px-4 py-3 text-right tabular-nums">{money(r.driverPaid)}</td><td className="px-4 py-3 text-right tabular-nums">{money(r.advances)}</td><td className={`px-4 py-3 text-right font-semibold tabular-nums ${r.due < 0 ? 'text-amber-600 dark:text-amber-400' : ''}`}>{r.due >= 0 ? `Owed to you ${money(r.due)}` : `You hold ${money(-r.due)}`}</td></tr>)}
-                {hasLoose ? <tr><td className="px-4 py-3 text-ink-500">Not linked to a load</td><td className="px-4 py-3 text-right tabular-nums">{money(loose.driverPaid)}</td><td className="px-4 py-3 text-right tabular-nums">{money(loose.advances)}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{loose.due >= 0 ? `Owed to you ${money(loose.due)}` : `You hold ${money(-loose.due)}`}</td></tr> : null}
+                {perLoad.map((r) => <tr key={r.l.id}><td className="px-4 py-3 font-medium">{[r.l.reference, r.l.customer].filter(Boolean).join(' · ') || 'Load'}</td><td className="px-4 py-3 text-right tabular-nums">{money(r.driverPaid)}</td><td className="px-4 py-3 text-right tabular-nums">{money(r.advances)}</td><td className={`whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums ${r.due < 0 ? 'text-amber-600 dark:text-amber-400' : ''}`}>{money(r.due)}</td></tr>)}
+                {hasLoose ? <tr><td className="px-4 py-3 text-ink-500">Not linked to a load</td><td className="px-4 py-3 text-right tabular-nums">{money(loose.driverPaid)}</td><td className="px-4 py-3 text-right tabular-nums">{money(loose.advances)}</td><td className="px-4 py-3 text-right font-semibold tabular-nums">{money(loose.due)}</td></tr> : null}
               </tbody>
             </table>
           </div>

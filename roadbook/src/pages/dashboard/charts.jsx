@@ -65,7 +65,7 @@ export function CategoryDonut({ cats, cur, total }) {
   const money = useMoney();
   const summary = `Expenses by category, total ${money(total, cur)}. ${cats.map((c) => `${catLabel(c.id)} ${money(c.cents, cur)} (${Math.round(c.share * 100)}%)`).join(', ')}.`;
   return (
-    <div className="flex flex-col items-center gap-5 sm:flex-row">
+    <div className="flex flex-col items-center gap-5">
       <div role="img" aria-label={summary} className="relative h-44 w-44 shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>

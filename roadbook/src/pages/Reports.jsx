@@ -19,10 +19,10 @@ function download(name, text) {
 }
 const dollars = (c) => (c / 100).toFixed(2);
 
-function SortHead({ col, sort, setSort, children, right }) {
+function SortHead({ col, sort, setSort, children, right, hide }) {
   const on = sort.key === col;
   return (
-    <th className={`px-4 py-2.5 font-medium ${right ? 'text-right' : ''}`} aria-sort={on ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
+    <th className={`px-4 py-2.5 font-medium ${right ? 'text-right' : ''} ${hide ? 'hidden sm:table-cell' : ''}`} aria-sort={on ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
       <button type="button" onClick={() => setSort({ key: col, dir: on ? -sort.dir : -1 })} className={`inline-flex items-center gap-1 uppercase tracking-wide ${right ? 'flex-row-reverse' : ''}`}>
         {children}{on && (sort.dir > 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
       </button>
@@ -141,7 +141,7 @@ export default function Reports() {
         <Empty title="No records in this period" text="Pick another period, or add income and expenses to see your profit and loss." />
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Stat label="Revenue" value={money(revenue)} />
             <Stat label="Expenses" value={money(spent)} />
             <Stat label="Net profit" value={money(net)} tone={net > 0 ? 'good' : net < 0 ? 'bad' : undefined} />
@@ -176,7 +176,7 @@ export default function Reports() {
                 <table className="w-full text-left text-sm">
                   <thead className="bg-ink-50 text-xs text-ink-500 dark:bg-ink-900/60"><tr>
                     <SortHead col="name" sort={sort} setSort={setSort}>Load</SortHead>
-                    <SortHead col="rate" sort={sort} setSort={setSort} right>Rate</SortHead>
+                    <SortHead col="rate" sort={sort} setSort={setSort} right hide>Rate</SortHead>
                     <SortHead col="income" sort={sort} setSort={setSort} right>Income</SortHead>
                     <SortHead col="expenses" sort={sort} setSort={setSort} right>Expenses</SortHead>
                     <SortHead col="net" sort={sort} setSort={setSort} right>Net</SortHead>
@@ -185,7 +185,7 @@ export default function Reports() {
                     {loadRows.map((r) => (
                       <tr key={r.id}>
                         <td className="px-4 py-3"><div className="font-medium">{r.name}</div>{r.ref && r.ref !== r.name && <div className="text-xs text-ink-500">{r.ref}</div>}</td>
-                        <td className="px-4 py-3 text-right tabular-nums text-ink-500">{money(r.rate)}</td>
+                        <td className="hidden px-4 py-3 text-right tabular-nums text-ink-500 sm:table-cell">{money(r.rate)}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{money(r.income)}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{money(r.expenses)}</td>
                         <td className={`px-4 py-3 text-right font-semibold tabular-nums ${r.net < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{money(r.net)}</td>

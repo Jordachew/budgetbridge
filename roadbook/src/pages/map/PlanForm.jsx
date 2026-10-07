@@ -33,7 +33,7 @@ export default function PlanForm({ open, onClose, plan, meApi }) {
     let m = 0;
     for (let i = 1; i < pts.length; i++) m += haversine(pts[i - 1], pts[i]);
     return Math.round(m);
-  }, [labels.join('|'), found]); // eslint-disable-line
+  }, [labels.join('|'), found]);
   const mapPts = pts.map((p, i) => (p && typeof p === 'object' ? { ...p, label: labels[i], i } : null)).filter(Boolean);
   const failed = labels.filter((l) => found[l] === 'notfound');
   const offline = labels.some((l) => found[l] === 'offline');
