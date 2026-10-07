@@ -1,42 +1,80 @@
 @import "tailwindcss";
-@import "@fontsource-variable/inter";
+@import "@fontsource/atkinson-hyperlegible/400.css";
+@import "@fontsource/atkinson-hyperlegible/700.css";
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/barlow-condensed/700.css";
 @import "leaflet/dist/leaflet.css";
 
 @custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
+/* Theme: Asphalt & Signal. Warm paper surfaces, asphalt ink, road-line amber as the single accent. */
 @theme {
-  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
-  --color-brand-50: #fff7ed;
-  --color-brand-100: #ffedd5;
-  --color-brand-400: #fb923c;
-  --color-brand-500: #f97316;
-  --color-brand-600: #ea580c;
-  --color-brand-700: #c2410c;
-  --color-ink-50: #f8fafc;
-  --color-ink-100: #f1f5f9;
-  --color-ink-200: #e2e8f0;
-  --color-ink-300: #cbd5e1;
-  --color-ink-400: #94a3b8;
-  --color-ink-500: #64748b;
-  --color-ink-600: #475569;
-  --color-ink-700: #334155;
-  --color-ink-800: #1e293b;
-  --color-ink-900: #0f172a;
-  --color-ink-950: #020617;
+  --font-sans: "Atkinson Hyperlegible", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "Atkinson Hyperlegible", ui-sans-serif, sans-serif;
+
+  --color-brand-50: #fff8e1;
+  --color-brand-100: #ffecb3;
+  --color-brand-300: #ffd866;
+  --color-brand-400: #ffc933;
+  --color-brand-500: #f5b000;   /* signal amber: fills, with ink text on top */
+  --color-brand-600: #9a6400;   /* text-safe amber on paper (5:1) */
+  --color-brand-700: #7a4f00;
+
+  --color-ink-50: #f9f9f7;
+  --color-ink-100: #f0efec;
+  --color-ink-200: #e1e0d9;
+  --color-ink-300: #c3c2b7;
+  --color-ink-400: #898781;
+  --color-ink-500: #6a6963;
+  --color-ink-600: #52514e;
+  --color-ink-700: #3a3b3f;
+  --color-ink-800: #26282d;
+  --color-ink-900: #1b1d22;
+  --color-ink-950: #121317;
+
+  --radius-card: 10px;
 }
 
-:root { color-scheme: light; --text-scale: 1; }
-html { font-size: calc(16px * var(--text-scale)); }
-html[data-theme="dark"] { color-scheme: dark; }
-body { @apply bg-ink-50 text-ink-900 antialiased; font-family: var(--font-sans); }
-html[data-theme="dark"] body { @apply bg-ink-950 text-ink-100; }
-@media (prefers-color-scheme: dark) {
-  html:not([data-theme="light"]) { color-scheme: dark; }
+:root {
+  color-scheme: light;
+  --text-scale: 1;
+  --paper: #f6f5f1;
+  --surface: #fffefc;
+  --hairline: rgba(27, 29, 34, 0.12);
+  /* categorical series, fixed order (validated: scripts/validate_palette.js, light on #fffefc) */
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
+  --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
+  --good: #006300; --warn: #8a5a00; --bad: #b42323;
+  --grid: #e1e0d9; --axis: #c3c2b7; --muted: #6a6963;
 }
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #121317;
+  --surface: #1b1d22;
+  --hairline: rgba(255, 255, 255, 0.1);
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
+  --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
+  --good: #0ca30c; --warn: #fab219; --bad: #ec6a6a;
+  --grid: #2c2d31; --axis: #3a3b3f; --muted: #a2a198;
+}
+
+html { font-size: calc(16px * var(--text-scale)); }
+body { background: var(--paper); color: var(--color-ink-900); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+html[data-theme="dark"] body { color: var(--color-ink-100); }
+h1, h2, .font-display { font-family: var(--font-display); letter-spacing: 0.005em; }
 * { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 2px solid var(--color-brand-500); outline-offset: 2px; }
-.leaflet-container { font-family: inherit; border-radius: 0.75rem; }
+.leaflet-container { font-family: inherit; border-radius: 8px; }
 .pb-safe { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+
+/* Road-line motif: a dashed centre line used as a divider. */
+.roadline { background-image: linear-gradient(90deg, var(--color-brand-500) 0 12px, transparent 12px 20px); background-size: 20px 2px; background-repeat: repeat-x; height: 2px; opacity: 0.9; }
+.paper-card { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius-card); }
+.skeleton { background: linear-gradient(90deg, rgba(128,128,120,.14), rgba(128,128,120,.26), rgba(128,128,120,.14)); background-size: 200% 100%; animation: sk 1.3s ease-in-out infinite; border-radius: 6px; }
+@keyframes sk { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } * { scroll-behavior: auto !important; transition-duration: 0.01ms !important; } }
+.page-enter { animation: pg .22s ease-out both; }
+@keyframes pg { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 @media print {
   body { background: #fff !important; color: #000 !important; }
