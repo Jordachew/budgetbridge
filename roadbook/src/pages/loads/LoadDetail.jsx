@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Check, ChevronRight, Pencil, Trash2, Navigation, Map as MapIcon, FileText, Plus, Receipt, Wallet, Route as RouteIcon, XCircle, Undo2, Package } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Pencil, Trash2, Navigation, Map as MapIcon, FileText, Plus, Wallet, Route as RouteIcon, XCircle, Undo2, Package } from 'lucide-react';
 import { PageHeader, Button, Card, CardTitle, Badge, Empty, Banner, cx, useConfirm } from '../../components/ui.jsx';
 import { useRow, useRows, save, remove } from '../../state/data.js';
 import { useMoney, useDistance } from '../../lib/hooks.js';
