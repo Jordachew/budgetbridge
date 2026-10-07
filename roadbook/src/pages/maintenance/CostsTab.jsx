@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Coins } from 'lucide-react';
-import { Card, CardTitle, Empty, Stat, Select } from '../../components/ui.jsx';
+import { Empty, Select } from '../../components/ui.jsx';
+import { Bars, HBars } from '../../components/charts';
 import { useRows } from '../../state/data.js';
 import { useCurrency, useMoney } from '../../lib/hooks.js';
+import { KINDS, kindLabel } from './status.js';
 
-const COLORS = { service: '#f97316', repair: '#0ea5e9' };
-const monthKey = (iso) => String(iso).slice(0, 7);
-const monthLabel = (k) => new Intl.DateTimeFormat('en-GB', { month: 'short', year: '2-digit' }).format(new Date(`${k}-15T12:00:00`));
+const MON = new Intl.DateTimeFormat('en-GB', { month: 'short' });
+const SLOT = Object.fromEntries(KINDS.map((k, i) => [k.id, i])); // a kind keeps its colour whatever the filter
+const keyOf = (d) => `${d.getFullYear()}-${d.getMonth()}`;
 
 export default function CostsTab() {
   const maintenance = useRows('maintenance');
@@ -15,71 +16,54 @@ export default function CostsTab() {
   const cur = useCurrency();
   const money = useMoney();
   const [vehicle, setVehicle] = useState('');
-  const rows = useMemo(() => maintenance.filter((m) => m.currency === cur && m.cost_cents > 0 && (!vehicle || m.vehicle_id === vehicle)), [maintenance, cur, vehicle]);
+  const costed = useMemo(() => maintenance.filter((m) => m.currency === cur && m.cost_cents > 0), [maintenance, cur]);
+  const rows = useMemo(() => costed.filter((m) => !vehicle || m.vehicle_id === vehicle), [costed, vehicle]);
   const other = maintenance.filter((m) => m.currency !== cur && m.cost_cents > 0).length;
 
-  const byMonth = useMemo(() => {
+  const months = useMemo(() => {
     const now = new Date(); const out = [];
-    for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, service: 0, repair: 0 }); }
-    for (const m of rows) { const b = out.find((x) => x.key === monthKey(new Date(m.done_at).toISOString())); if (b) b[m.kind === 'repair' ? 'repair' : 'service'] += m.cost_cents / 100; }
-    return out.map((b) => ({ ...b, label: monthLabel(b.key) }));
+    for (let i = 11; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); out.push({ key: keyOf(d), label: MON.format(d), values: {} }); }
+    for (const m of rows) { const b = out.find((x) => x.key === keyOf(new Date(m.done_at))); if (b) b.values[m.kind] = (b.values[m.kind] || 0) + m.cost_cents / 100; }
+    return out;
   }, [rows]);
-  const byVehicle = useMemo(() => {
+  const inWindow = months.reduce((a, b) => a + Object.values(b.values).reduce((x, y) => x + y, 0), 0);
+  const kinds = KINDS.filter((k) => months.some((b) => b.values[k.id] > 0)).map((k) => ({ id: k.id, label: k.label, slot: SLOT[k.id] }));
+  const kindTotals = KINDS.map((k) => ({ ...k, total: months.reduce((a, b) => a + (b.values[k.id] || 0), 0) })).sort((a, b) => b.total - a.total);
+  const bestMonth = months.reduce((a, b) => { const t = Object.values(b.values).reduce((x, y) => x + y, 0); return t > a.t ? { label: b.label, t } : a; }, { label: '', t: 0 });
+  const perVehicle = useMemo(() => {
     const m = new Map();
-    for (const r of maintenance.filter((x) => x.currency === cur && x.cost_cents > 0)) { const k = r.vehicle_id || 'none'; const e = m.get(k) || { name: vehicles.find((v) => v.id === k)?.name || 'No vehicle', service: 0, repair: 0 }; e[r.kind === 'repair' ? 'repair' : 'service'] += r.cost_cents / 100; m.set(k, e); }
-    return [...m.values()].sort((a, b) => b.service + b.repair - (a.service + a.repair));
-  }, [maintenance, vehicles, cur]);
-
+    for (const r of costed) { const k = r.vehicle_id || 'none'; m.set(k, (m.get(k) || 0) + r.cost_cents); }
+    return [...m].map(([id, value]) => ({ id, value: value / 100, label: vehicles.find((v) => v.id === id)?.name || 'No vehicle' }));
+  }, [costed, vehicles]);
   const total = rows.reduce((a, m) => a + m.cost_cents, 0);
-  const repair = rows.filter((m) => m.kind === 'repair').reduce((a, m) => a + m.cost_cents, 0);
-  const last12 = byMonth.reduce((a, b) => a + b.service + b.repair, 0);
-  const axis = { fontSize: 12, fill: '#94a3b8' };
-  const tip = (v) => money(Math.round(v * 100));
+  const repairs = rows.filter((m) => m.kind === 'repair').reduce((a, m) => a + m.cost_cents, 0);
+  const fmt = (n) => money(Math.round(n * 100));
+  const axis = (n) => (n >= 1000 ? `${Number((n / 1000).toFixed(1))}k` : String(Math.round(n)));
 
-  if (!maintenance.some((m) => m.cost_cents > 0)) return <Empty icon={Coins} title="No costs recorded" text="Add a cost to your service records and your spending charts will appear here." />;
+  if (!maintenance.some((m) => m.cost_cents > 0)) return <Empty icon={Coins} title="See what the truck costs you" text="Add a cost to your service records and this page shows spending by month, by type of work and by vehicle." />;
 
   return (
-    <div className="space-y-4">
-      {vehicles.length > 0 && <Select aria-label="Filter by vehicle" value={vehicle} onChange={(e) => setVehicle(e.target.value)} className="!w-auto"><option value="">All vehicles</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</Select>}
-      <div className="grid grid-cols-3 gap-3">
-        <Stat label="Total spent" value={money(total)} />
-        <Stat label="Repairs" value={money(repair)} />
-        <Stat label="Last 12 months" value={money(Math.round(last12 * 100))} />
+    <div>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        {vehicles.length > 1 ? <Select aria-label="Filter by vehicle" value={vehicle} onChange={(e) => setVehicle(e.target.value)} className="!w-auto"><option value="">All vehicles</option>{vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</Select> : <span />}
+        <p className="text-xs text-ink-500">Service and repair costs in {cur}, last 12 months in the chart.</p>
       </div>
-      {other > 0 && <p className="text-xs text-ink-500">{other} record{other === 1 ? ' is' : 's are'} in another currency and not counted here.</p>}
-      <Card>
-        <CardTitle title="Spending by month" sub="Maintenance and repairs, last 12 months" />
-        <div role="img" aria-label={`Bar chart of maintenance and repair spending by month. Total for the last 12 months: ${money(Math.round(last12 * 100))}.`} className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={byMonth} margin={{ left: 0, right: 8, top: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#94a3b833" vertical={false} />
-              <XAxis dataKey="label" tick={axis} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-              <YAxis tick={axis} tickLine={false} axisLine={false} width={48} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
-              <Tooltip formatter={tip} contentStyle={{ borderRadius: 12 }} />
-              <Legend />
-              <Bar isAnimationActive={false} dataKey="service" name="Maintenance" stackId="a" fill={COLORS.service} />
-              <Bar isAnimationActive={false} dataKey="repair" name="Repairs" stackId="a" fill={COLORS.repair} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-      <Card>
-        <CardTitle title="Spending by vehicle" sub="All time" />
-        <div role="img" aria-label={`Spending by vehicle: ${byVehicle.map((v) => `${v.name} ${money(Math.round((v.service + v.repair) * 100))}`).join(', ')}.`} style={{ height: Math.max(140, byVehicle.length * 56 + 40) }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={byVehicle} layout="vertical" margin={{ left: 8, right: 16 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#94a3b833" horizontal={false} />
-              <XAxis type="number" tick={axis} tickLine={false} axisLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
-              <YAxis type="category" dataKey="name" tick={axis} tickLine={false} axisLine={false} width={90} />
-              <Tooltip formatter={tip} contentStyle={{ borderRadius: 12 }} />
-              <Legend />
-              <Bar isAnimationActive={false} dataKey="service" name="Maintenance" stackId="a" fill={COLORS.service} />
-              <Bar isAnimationActive={false} dataKey="repair" name="Repairs" stackId="a" fill={COLORS.repair} radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <table className="sr-only"><caption>Spending by vehicle</caption><tbody>{byVehicle.map((v) => <tr key={v.name}><th>{v.name}</th><td>{money(Math.round((v.service + v.repair) * 100))}</td></tr>)}</tbody></table>
-      </Card>
+      <dl className="mb-5 grid grid-cols-3 divide-x divide-[var(--hairline)] overflow-hidden rounded-[10px] border border-[var(--hairline)] bg-[var(--surface)]">
+        <div className="p-4"><dt className="text-xs font-bold uppercase tracking-wide text-ink-500">All time</dt><dd className="mt-1.5 text-xl font-bold leading-none sm:text-3xl">{money(total)}</dd></div>
+        <div className="p-4"><dt className="text-xs font-bold uppercase tracking-wide text-ink-500">Repairs</dt><dd className="mt-1.5 text-xl font-bold leading-none sm:text-3xl">{money(repairs)}</dd></div>
+        <div className="p-4"><dt className="text-xs font-bold uppercase tracking-wide text-ink-500">Last 12 months</dt><dd className="mt-1.5 text-xl font-bold leading-none sm:text-3xl">{fmt(inWindow)}</dd></div>
+      </dl>
+      {other > 0 && <p className="mb-4 text-xs text-ink-500">{other} record{other === 1 ? ' is' : 's are'} in another currency and not counted here.</p>}
+      <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
+        <Bars data={months} series={kinds} stacked format={fmt} axisFormat={axis} title="Spending by month" subtitle="Stacked by type of work"
+          summary={inWindow > 0 ? `You spent ${fmt(inWindow)} on service and repairs in the last 12 months.${bestMonth.t ? ` ${bestMonth.label} cost the most at ${fmt(bestMonth.t)}.` : ''} ${kindLabel(kindTotals[0].id)} was the biggest type at ${Math.round((kindTotals[0].total / inWindow) * 100)} percent.` : 'No service or repair costs in the last 12 months.'} />
+        {perVehicle.length > 1 ? (
+          <HBars items={perVehicle} format={fmt} title="Cost per vehicle" subtitle="All time" valueTitle="Spent"
+            summary={`${[...perVehicle].sort((a, b) => b.value - a.value)[0].label} has cost the most at ${fmt([...perVehicle].sort((a, b) => b.value - a.value)[0].value)}, ${Math.round(([...perVehicle].sort((a, b) => b.value - a.value)[0].value / perVehicle.reduce((a, b) => a + b.value, 0)) * 100)} percent of the total.`} />
+        ) : (
+          <div className="paper-card p-5"><h3 className="font-display text-lg font-semibold">Cost per vehicle</h3><p className="mt-2 text-sm text-ink-600 dark:text-ink-300">{perVehicle[0] ? `${perVehicle[0].label} is the only vehicle with costs so far: ${fmt(perVehicle[0].value)} in total.` : 'No costs yet.'} Add a second vehicle to compare.</p></div>
+        )}
+      </div>
     </div>
   );
 }

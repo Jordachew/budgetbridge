@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { ls, safeJSON } from '../core/util.js';
 
 const KEY = 'roadbook.prefs.v2';
-export const DEFAULTS = { textSize: 100, theme: 'auto', unit: 'km', currency: 'JMD', lastMode: null, onboarded: false };
+export const DEFAULTS = { textSize: 100, theme: 'auto', unit: 'km', currency: 'JMD', chartTexture: false, lastMode: null, onboarded: false };
 let cur = { ...DEFAULTS, ...safeJSON(ls(KEY), {}) };
 const subs = new Set();
 

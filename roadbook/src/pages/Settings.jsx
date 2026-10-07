@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
-import { LogOut, Download, Trash2, Upload } from 'lucide-react';
-import { PageHeader, Card, CardTitle, Field, Input, Select, Segmented, Button, Banner, Switch, useConfirm } from '../components/ui.jsx';
+import { LogOut, Download, Trash2, Upload, FlaskConical } from 'lucide-react';
+import { PageHeader, Card, CardTitle, Field, Input, Select, Segmented, Button, Banner, Switch, Kbd, useConfirm } from '../components/ui.jsx';
+import { hasDemo, loadDemo, clearDemo } from '../lib/demo.js';
 import { useApp, session } from '../state/app.jsx';
 import { useProfile } from '../state/data.js';
 import { usePrefs, setPref } from '../state/prefs.js';
@@ -71,8 +72,29 @@ export default function Settings() {
             <Field label="Theme"><Segmented value={prefs.theme} onChange={(theme) => setPref({ theme })} options={[{ value: 'auto', label: 'Auto' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]} /></Field>
             <Field label="Text size"><Segmented value={prefs.textSize} onChange={(textSize) => setPref({ textSize })} options={[{ value: 100, label: 'Normal' }, { value: 115, label: 'Large' }, { value: 130, label: 'Huge' }]} /></Field>
             <Field label="Distance unit"><Segmented value={prefs.unit} onChange={(unit) => setPref({ unit })} options={[{ value: 'km', label: 'Kilometres' }, { value: 'mi', label: 'Miles' }]} /></Field>
+            <Switch checked={!!prefs.chartTexture} onChange={(chartTexture) => setPref({ chartTexture })} label="Patterns on charts" hint="Adds diagonal hatching so series can be told apart without colour. Also used when printing." />
           </div>
         </Card>
+
+        <Card>
+          <CardTitle title="Shortcuts" sub="Work faster from a keyboard" />
+          <ul className="space-y-2 text-sm">
+            <li className="flex items-center justify-between"><span>Search or jump anywhere</span><span className="flex gap-1"><Kbd>Ctrl</Kbd><Kbd>K</Kbd></span></li>
+            <li className="flex items-center justify-between"><span>Search (when not typing)</span><Kbd>/</Kbd></li>
+            <li className="flex items-center justify-between"><span>Add something new</span><Kbd>N</Kbd></li>
+            <li className="flex items-center justify-between"><span>Close a window</span><Kbd>Esc</Kbd></li>
+          </ul>
+        </Card>
+
+        {!isAccount && (
+          <Card>
+            <CardTitle title="Sample data" sub="Explore a full set of loads, invoices and expenses" />
+            <p className="mb-3 text-sm text-ink-600 dark:text-ink-300">Only for trying Roadbook without an account. It is clearly separate and one tap removes it.</p>
+            {hasDemo()
+              ? <Button variant="outline" icon={Trash2} onClick={async () => { await clearDemo(); toast('Sample data removed.'); }}>Remove sample data</Button>
+              : <Button variant="soft" icon={FlaskConical} onClick={async () => { await loadDemo(); toast('Sample data added. Explore!'); }}>Add sample data</Button>}
+          </Card>
+        )}
 
         <Card>
           <CardTitle title="Backup and account" />

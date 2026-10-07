@@ -1,13 +1,13 @@
-import { useMemo, useState } from 'react';
-import { Fuel, LocateFixed, Search, BookmarkPlus, Check, TrendingDown } from 'lucide-react';
-import { Card, Button, Input, Segmented, Empty, Banner, Badge } from '../../components/ui.jsx';
+import { useEffect, useMemo, useState } from 'react';
+import { Fuel, Search, BookmarkPlus, Check, TrendingDown, Receipt } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Button, Input, Segmented, Empty, Banner, Badge } from '../../components/ui.jsx';
 import { useRows, save, create } from '../../state/data.js';
 import { haversine } from '../../core/geo.js';
 import { parseMoney, fmtMoney } from '../../core/format.js';
 import { useMoney, useDistance, useCurrency } from '../../lib/hooks.js';
 import { useToast } from '../../components/toast.jsx';
-import LeafMap from './LeafMap.jsx';
-import { NavButtons } from './PlacesTab.jsx';
+import { NavButtons } from './bits.jsx';
 
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
 
@@ -35,20 +35,22 @@ function PriceEditor({ place }) {
     const c = parseMoney(v);
     if (c == null || c <= 0 || c > 1000000) { setErr('Type a price like 215.50'); return; }
     setErr('');
-    await save('places', { ...place, fuel_price_cents: c });
+    const { away: _a, ...row } = place;
+    await save('places', { ...row, fuel_price_cents: c });
     setV(''); toast(`${place.name} is now ${fmtMoney(c, cur)} per litre.`);
   }
   return (
     <form className="flex items-start gap-2" onSubmit={(e) => { e.preventDefault(); go(); }}>
-      <div className="w-28"><Input aria-label={`New price per litre for ${place.name}`} inputMode="decimal" placeholder="New price" value={v} onChange={(e) => setV(e.target.value)} className="!h-8" />{err && <p className="mt-1 text-xs text-red-600">{err}</p>}</div>
-      <Button size="sm" variant="soft" type="submit" icon={Check}>Update</Button>
+      <div className="w-28"><Input aria-label={`New price per litre for ${place.name}`} inputMode="decimal" placeholder="New price" value={v} onChange={(e) => setV(e.target.value)} className="!h-9" />{err && <p className="mt-1 text-xs text-red-600">{err}</p>}</div>
+      <Button size="sm" variant="soft" type="submit" icon={Check} className="!h-9">Update</Button>
     </form>
   );
 }
 
-export default function FuelTab({ meApi }) {
+export default function FuelTab({ meApi, onMarkers, focusOn }) {
   const places = useRows('places');
-  const { me, state, locate } = meApi;
+  const vehicles = useRows('vehicles');
+  const { me, locate } = meApi;
   const money = useMoney();
   const dist = useDistance();
   const toast = useToast();
@@ -60,12 +62,17 @@ export default function FuelTab({ meApi }) {
     if (sort === 'distance' && me) return l.sort((a, b) => a.away - b.away);
     return l.sort((a, b) => (a.fuel_price_cents ?? Infinity) - (b.fuel_price_cents ?? Infinity) || (a.away ?? 0) - (b.away ?? 0));
   }, [places, me, sort]);
-  const cheapest = fuel.find((p) => p.fuel_price_cents != null);
+  const priced = fuel.filter((p) => p.fuel_price_cents != null);
+  const cheapest = priced.length ? priced.reduce((a, b) => (b.fuel_price_cents < a.fuel_price_cents ? b : a)) : null;
+  const avg = priced.length ? priced.reduce((a, p) => a + p.fuel_price_cents, 0) / priced.length : 0;
+  const tank = Math.max(0, ...vehicles.map((v) => v.tank_litres || 0)) || 100;
+  const saving = cheapest ? Math.round(avg - cheapest.fuel_price_cents) : 0;
 
   const markers = useMemo(() => [
-    ...fuel.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, color: p === cheapest ? '#10b981' : '#f97316', glyph: p.fuel_price_cents != null ? '$' : 'F', title: `${p.name}${p.fuel_price_cents != null ? ` - ${money(p.fuel_price_cents)}/L` : ''}`, ring: p === cheapest })),
-    ...near.list.map((s) => ({ id: s.key, lat: s.lat, lng: s.lng, color: '#94a3b8', glyph: 'F', size: 24, title: s.name })),
+    ...fuel.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, color: p === cheapest ? 'var(--good)' : 'var(--series-2)', glyph: p.fuel_price_cents != null ? '$' : 'F', title: `${p.name}${p.fuel_price_cents != null ? ` - ${money(p.fuel_price_cents)}/L` : ''}`, ring: p === cheapest })),
+    ...near.list.map((s) => ({ id: s.key, lat: s.lat, lng: s.lng, color: 'var(--muted)', glyph: 'F', size: 24, title: s.name })),
   ], [fuel, near.list, cheapest, money]);
+  useEffect(() => { onMarkers(markers, `fuel-${fuel.length}-${near.list.length}`); }, [markers]);
 
   async function find() {
     setNear({ state: 'locating', list: [] });
@@ -76,63 +83,72 @@ export default function FuelTab({ meApi }) {
   }
   async function keep(s) {
     await create('places', { kind: 'fuel', name: s.name, lat: s.lat, lng: s.lng, note: '', fuel_price_cents: null });
-    toast(`${s.name} saved to your places. Add its price from the list above.`);
+    toast(`${s.name} saved. Add its price from the list.`);
   }
   const saved = (s) => places.some((p) => p.kind === 'fuel' && Math.abs(p.lat - s.lat) < 0.0003 && Math.abs(p.lng - s.lng) < 0.0003);
 
   return (
-    <div className="space-y-4">
-      <LeafMap markers={markers} me={me} fitKey={`${fuel.length}-${near.list.length}-${me ? 1 : 0}`} height={320} label="Map of fuel stations" />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Segmented value={sort} onChange={setSort} options={[{ value: 'price', label: 'Cheapest first' }, { value: 'distance', label: 'Nearest first' }]} />
-        <Button variant="outline" icon={LocateFixed} loading={state === 'loading'} onClick={locate}>{me ? 'Update my location' : 'My location'}</Button>
-      </div>
-      {sort === 'distance' && !me && <Banner tone="blue">Tap "My location" to sort by distance.</Banner>}
+    <div>
+      {cheapest && priced.length > 1 ? (
+        <div className="mb-4 rounded-md border-l-4 border-[var(--good)] bg-ink-100/70 px-3 py-3 text-sm dark:bg-ink-800/60" role="status">
+          {saving > 0 ? (
+            <>
+              <p><b>{cheapest.name}</b> is the cheapest at <b>{money(cheapest.fuel_price_cents)}</b> a litre, <b>{money(saving)}</b> under your average of {money(Math.round(avg))}.</p>
+              <p className="mt-1 text-ink-600 dark:text-ink-300">Filling {tank} litres there saves about <b>{money(saving * tank)}</b>.</p>
+            </>
+          ) : <p>Your stations all charge about the same, {money(Math.round(avg))} a litre.</p>}
+        </div>
+      ) : <p className="mb-3 text-sm text-ink-600 dark:text-ink-300">Add a price to two or more stations and Roadbook shows how much the cheapest one saves you.</p>}
 
-      <section aria-label="Your fuel stations">
-        <h2 className="mb-2 text-sm font-semibold">Your fuel stations</h2>
-        {fuel.length === 0 ? <Empty icon={Fuel} title="No fuel stations saved" text="Use the finder below to save stations near you, then keep their prices up to date." /> : (
-          <ul className="space-y-2">
-            {fuel.map((p) => (
-              <li key={p.id}>
-                <Card className={`!p-4 ${p === cheapest ? 'ring-2 !ring-emerald-500' : ''}`}>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2"><span className="font-semibold">{p.name}</span>{p === cheapest && fuel.filter((x) => x.fuel_price_cents != null).length > 1 && <Badge tone="green"><TrendingDown size={12} className="mr-1" />Cheapest</Badge>}</div>
-                      <div className="text-xs text-ink-500">{p.away != null ? `${dist(p.away)} away` : 'Distance unknown'}</div>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <Segmented value={sort} onChange={setSort} options={[{ value: 'price', label: 'Cheapest' }, { value: 'distance', label: 'Nearest' }]} />
+        <Button as={Link} to="/expenses?new=1&cat=fuel" variant="ghost" size="sm" icon={Receipt}>Log fuel</Button>
+      </div>
+      {sort === 'distance' && !me && <div className="mb-2"><Banner tone="blue">Tap the locate button on the map to sort by distance.</Banner></div>}
+
+      {fuel.length === 0 ? <Empty icon={Fuel} title="No fuel stations saved" text="Search near you below, save the stations you use, then keep their prices up to date." /> : (
+        <ol className="border-t border-[var(--hairline)]">
+          {fuel.map((p, i) => {
+            const best = p === cheapest && priced.length > 1;
+            return (
+              <li key={p.id} className={`border-b border-[var(--hairline)] py-3 ${best ? '-mx-2 border-l-4 border-l-[var(--good)] bg-ink-100/60 px-2 dark:bg-ink-800/50' : ''}`}>
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-ink-300 text-xs font-bold text-ink-600 dark:border-ink-600 dark:text-ink-300" aria-label={`Rank ${i + 1}`}>{i + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <button type="button" onClick={() => focusOn(p)} className="min-w-0 text-left"><span className="block truncate font-bold">{p.name}</span><span className="text-xs text-ink-500">{p.away != null ? `${dist(p.away)} away` : 'Distance unknown'}</span></button>
+                      <div className="shrink-0 text-right"><div className="text-xl font-bold leading-none">{p.fuel_price_cents != null ? money(p.fuel_price_cents) : '-'}</div><div className="mt-0.5 text-xs text-ink-500">per litre{cheapest && p !== cheapest && p.fuel_price_cents != null ? ` · +${money(p.fuel_price_cents - cheapest.fuel_price_cents)}` : ''}</div></div>
                     </div>
-                    <div className="text-right"><div className="text-xl font-bold tabular-nums">{p.fuel_price_cents != null ? money(p.fuel_price_cents) : '-'}</div><div className="text-xs text-ink-500">per litre</div></div>
+                    {best && <div className="mt-1"><Badge tone="green" icon={TrendingDown}>Cheapest</Badge></div>}
+                    <div className="mt-2 flex flex-wrap items-start justify-between gap-2"><NavButtons p={p} /><PriceEditor place={p} /></div>
                   </div>
-                  <div className="mt-3 flex flex-wrap items-start justify-between gap-3"><NavButtons p={p} /><PriceEditor place={p} /></div>
-                </Card>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      <section className="mt-5" aria-label="Find fuel near me">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div><h3 className="font-display text-lg font-semibold leading-tight">Find fuel near me</h3><p className="text-xs text-ink-500">Stations within 15 km. Needs internet.</p></div>
+          <Button icon={Search} variant="outline" onClick={find} loading={near.state === 'locating' || near.state === 'searching'}>Search</Button>
+        </div>
+        {near.state === 'nolocation' && <div className="mt-3"><Banner tone="amber">We could not read your location. Allow location for this site and try again.</Banner></div>}
+        {near.state === 'failed' && <div className="mt-3"><Banner tone="amber">The station finder could not be reached. You may be offline. Your saved stations still work.</Banner></div>}
+        {near.state === 'done' && near.list.length === 0 && <p className="mt-3 text-sm text-ink-500">No stations found within 15 km.</p>}
+        {near.list.length > 0 && (
+          <ul className="mt-3 divide-y divide-[var(--hairline)] border-y border-[var(--hairline)]">
+            {near.list.map((s) => (
+              <li key={s.key} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                <div className="min-w-0"><div className="truncate text-sm font-bold">{s.name}</div><div className="text-xs text-ink-500">{dist(s.away)} away</div></div>
+                <div className="flex gap-1.5">{saved(s) ? <Badge tone="green" icon={Check}>Saved</Badge> : <Button size="sm" icon={BookmarkPlus} variant="outline" onClick={() => keep(s)}>Save</Button>}</div>
               </li>
             ))}
           </ul>
         )}
       </section>
-
-      <section aria-label="Find fuel near me">
-        <Card>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div><h2 className="text-sm font-semibold">Find fuel near me</h2><p className="text-xs text-ink-500">Looks up stations within 15 km on OpenStreetMap. Needs internet.</p></div>
-            <Button icon={Search} onClick={find} loading={near.state === 'locating' || near.state === 'searching'}>Search nearby</Button>
-          </div>
-          {near.state === 'nolocation' && <div className="mt-3"><Banner tone="amber">We could not read your location, so we cannot search. Allow location for this site and try again.</Banner></div>}
-          {near.state === 'failed' && <div className="mt-3"><Banner tone="amber">The station finder could not be reached. You may be offline or the service is busy. Your saved stations above still work.</Banner></div>}
-          {near.state === 'done' && near.list.length === 0 && <p className="mt-3 text-sm text-ink-500">No stations found within 15 km.</p>}
-          {near.list.length > 0 && (
-            <ul className="mt-3 divide-y divide-ink-100 dark:divide-ink-800">
-              {near.list.map((s) => (
-                <li key={s.key} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-                  <div className="min-w-0"><div className="truncate text-sm font-medium">{s.name}</div><div className="text-xs text-ink-500">{dist(s.away)} away</div></div>
-                  <div className="flex gap-1.5"><NavButtons p={s} />{saved(s) ? <Badge tone="green">Saved</Badge> : <Button size="sm" icon={BookmarkPlus} variant="outline" onClick={() => keep(s)}>Save to my places</Button>}</div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </section>
-      <p className="text-xs text-ink-500">Prices are entered by you, so check them at the pump.</p>
+      <p className="mt-4 text-xs text-ink-500">Prices are entered by you, so check them at the pump.</p>
     </div>
   );
 }

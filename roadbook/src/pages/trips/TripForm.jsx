@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Modal, Button, Field, Input, Select, Textarea, Segmented, Banner } from '../../components/ui.jsx';
+import { Field, Input, Select, Textarea, Segmented, Banner } from '../../components/ui.jsx';
+import { FormModal } from '../maintenance/formKit.jsx';
 import { create, save } from '../../state/data.js';
 import { usePrefs } from '../../state/prefs.js';
 import { fmtDistance, parseDistance, toLocalInput, fromLocalInput, unitLabel } from '../../core/format.js';
@@ -69,19 +70,18 @@ export default function TripForm({ open, onClose, trip }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={editing ? 'Edit trip' : 'Add a trip by odometer'}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={busy} onClick={submit}>{editing ? 'Save changes' : 'Add trip'}</Button></>}>
+    <FormModal open={open} onClose={onClose} title={editing ? 'Edit trip' : 'Log a trip by odometer'} submitLabel={editing ? 'Save changes' : 'Add trip'} busy={busy} onSubmit={submit}>
       <div className="space-y-4">
         {editing && isGps && <Banner tone="blue">This trip was recorded by GPS. You can fix the distance if the signal was poor.</Banner>}
         {!(editing && isGps) && <Segmented value={f.mode} onChange={(mode) => setF({ ...f, mode })} options={[{ value: 'odometer', label: 'From odometer' }, { value: 'distance', label: 'Type distance' }]} />}
         {f.mode === 'odometer' ? (
           <div className="grid grid-cols-2 gap-3">
-            <Field label={`Start reading (${unit})`} error={err.startOdo}>{(id) => <Input id={id} inputMode="decimal" value={f.startOdo} onChange={set('startOdo')} placeholder="125430" />}</Field>
+            <Field label={`Start reading (${unit})`} error={err.startOdo}>{(id) => <Input id={id} data-autofocus inputMode="decimal" value={f.startOdo} onChange={set('startOdo')} placeholder="125430" />}</Field>
             <Field label={`End reading (${unit})`} error={err.endOdo}>{(id) => <Input id={id} inputMode="decimal" value={f.endOdo} onChange={set('endOdo')} placeholder="125610" />}</Field>
             <p className="col-span-2 text-sm text-ink-500">Distance: <b className="text-ink-900 dark:text-white">{calc != null ? fmtDistance(calc, unit) : 'fill in both readings'}</b></p>
           </div>
         ) : (
-          <Field label={`Distance (${unitLabel(unit)})`} error={err.distance}>{(id) => <Input id={id} inputMode="decimal" value={f.distance} onChange={set('distance')} placeholder="85.5" />}</Field>
+          <Field label={`Distance (${unitLabel(unit)})`} error={err.distance}>{(id) => <Input id={id} data-autofocus inputMode="decimal" value={f.distance} onChange={set('distance')} placeholder="85.5" />}</Field>
         )}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Started" error={err.started}>{(id) => <Input id={id} type="datetime-local" value={f.started} onChange={set('started')} />}</Field>
@@ -95,6 +95,6 @@ export default function TripForm({ open, onClose, trip }) {
         </div>
         <Field label="Note">{(id) => <Textarea id={id} value={f.note} maxLength={500} onChange={set('note')} />}</Field>
       </div>
-    </Modal>
+    </FormModal>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Modal, Button, Field, Input, Select, Textarea } from '../../components/ui.jsx';
+import { Field, Input, Select, Textarea } from '../../components/ui.jsx';
+import { FormModal } from './formKit.jsx';
 import { create, save } from '../../state/data.js';
 import { parseDistance, unitLabel } from '../../core/format.js';
 import { usePrefs } from '../../state/prefs.js';
@@ -39,11 +40,10 @@ export default function VehicleForm({ open, onClose, vehicle }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={editing ? 'Edit vehicle' : 'Add a vehicle'}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={busy} onClick={submit}>{editing ? 'Save changes' : 'Add vehicle'}</Button></>}>
+    <FormModal open={open} onClose={onClose} title={editing ? 'Edit vehicle' : 'Add a vehicle'} submitLabel={editing ? 'Save changes' : 'Add vehicle'} busy={busy} onSubmit={submit}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Name" error={err.name} className="sm:col-span-2">{(id) => <Input id={id} value={f.name} maxLength={60} onChange={set('name')} />}</Field>
-        <Field label="Licence plate">{(id) => <Input id={id} value={f.plate} maxLength={20} onChange={set('plate')} />}</Field>
+        <Field label="Name" error={err.name} className="sm:col-span-2">{(id) => <Input id={id} data-autofocus value={f.name} maxLength={60} onChange={set('name')} placeholder="Blue Isuzu" />}</Field>
+        <Field label="Licence plate">{(id) => <Input id={id} value={f.plate} maxLength={20} onChange={set('plate')} placeholder="8821 HJ" className="uppercase" />}</Field>
         <Field label="Fuel">{(id) => <Select id={id} value={f.fuel_type} onChange={set('fuel_type')}><option value="diesel">Diesel</option><option value="petrol">Petrol</option><option value="lpg">LPG</option><option value="other">Other</option></Select>}</Field>
         <Field label="Make">{(id) => <Input id={id} value={f.make} maxLength={40} onChange={set('make')} />}</Field>
         <Field label="Model">{(id) => <Input id={id} value={f.model} maxLength={40} onChange={set('model')} />}</Field>
@@ -53,6 +53,6 @@ export default function VehicleForm({ open, onClose, vehicle }) {
         <Field label="VIN / chassis number" className="sm:col-span-2">{(id) => <Input id={id} value={f.vin} maxLength={30} onChange={set('vin')} />}</Field>
         <Field label="Notes" className="sm:col-span-2">{(id) => <Textarea id={id} value={f.notes} maxLength={1000} onChange={set('notes')} />}</Field>
       </div>
-    </Modal>
+    </FormModal>
   );
 }
