@@ -1,7 +1,7 @@
 name: Deploy Roadbook to GitHub Pages
 on:
   push:
-    branches: [main, claude/app-packaging-deployment-xdhok6]
+    branches: [main]
     paths: ['roadbook/**', '.github/workflows/roadbook-pages.yml']
   workflow_dispatch:
 permissions:
