@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search, LayoutGrid, List, Truck, MapPin, Calendar } from 'lucide-react';
 import { PageHeader, Button, Badge, Card, Empty, Input, Segmented, Chips, Table } from '../../components/ui.jsx';
@@ -43,8 +43,9 @@ export default function LoadsHome() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('all');
   const formOpen = params.get('new') === '1';
+  const saved = useRef(false);
   const setView = (v) => { setViewState(v); ls(VIEW_KEY, v); };
-  const closeForm = () => { const p = new URLSearchParams(params); p.delete('new'); setParams(p, { replace: true }); };
+  const closeForm = () => { if (saved.current) return; const p = new URLSearchParams(params); p.delete('new'); setParams(p, { replace: true }); };
   const openForm = () => { const p = new URLSearchParams(params); p.set('new', '1'); setParams(p, { replace: true }); };
 
   const sorted = useMemo(() => [...loads].sort((a, b) => new Date(b.pickup_at || b.created_at) - new Date(a.pickup_at || a.created_at)), [loads]);
@@ -113,7 +114,7 @@ export default function LoadsHome() {
           </div>
         </>
       )}
-      {formOpen && <LoadForm open onClose={closeForm} onSaved={(row) => nav(`/loads/${row.id}`)} />}
+      {formOpen && <LoadForm open onClose={closeForm} onSaved={(row) => { saved.current = true; nav(`/loads/${row.id}`); }} />}
     </>
   );
 }
