@@ -1,10 +1,13 @@
+import { useEffect, useRef } from 'react';
 import { cx } from '../../components/ui.jsx';
 
 /** Underlined page tabs. tabs: [{ value, label, icon, badge?: { text, tone: 'red'|'amber'|'neutral' } }] */
 export default function Tabs({ tabs, value, onChange, label = 'Sections' }) {
   const tone = { red: 'bg-[var(--bad)] text-white', amber: 'bg-brand-500 text-ink-950', neutral: 'bg-ink-200 text-ink-700 dark:bg-ink-700 dark:text-ink-100' };
+  const box = useRef(null);
+  useEffect(() => { box.current?.querySelector('[aria-selected=true]')?.scrollIntoView?.({ inline: 'center', block: 'nearest' }); }, [value]);
   return (
-    <div role="tablist" aria-label={label} className="-mx-4 mb-6 flex gap-1 overflow-x-auto border-b border-[var(--hairline)] px-4 md:mx-0 md:px-0">
+    <div ref={box} role="tablist" aria-label={label} className="-mx-4 mb-6 flex gap-1 overflow-x-auto border-b border-[var(--hairline)] px-4 md:mx-0 md:px-0">
       {tabs.map((t) => {
         const on = t.value === value; const Icon = t.icon;
         return (
