@@ -1,82 +1,108 @@
-import { Printer } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft, Mail, Printer } from 'lucide-react';
 import { Button } from '../../components/ui.jsx';
-import { fmtMoney, fmtDate } from '../../core/format.js';
+import { fmtMoney } from '../../core/format.js';
 import { invoiceTotals, lineCents } from './totals.js';
-import { businessName } from './summary.js';
+import { businessName, mailtoLink } from './summary.js';
+import { daysBetween, fmtDay } from './helpers.js';
 
-const d = (s) => (s ? fmtDate(`${s}T12:00:00`, { weekday: false, year: true }) : '');
+// Backgrounds and the dark header band must survive "Save as PDF".
+const EXACT = { WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' };
+const LABEL = 'text-[10px] font-bold uppercase tracking-[0.16em] text-ink-500';
 
-/** A clean A4 invoice. Always light, so it prints and saves to PDF the same in dark mode. */
+/** A4 invoice. Always light, so it prints and saves to PDF the same in dark mode. */
 export default function InvoicePrint({ inv, profile }) {
   const t = invoiceTotals(inv);
   const m = (c) => fmtMoney(c, inv.currency);
-  const email = (window.ROADBOOK_CONFIG || {}).supportEmail;
+  const terms = inv.due_date && inv.issue_date ? daysBetween(inv.issue_date, inv.due_date) : null;
+  const termsText = terms == null ? '' : terms <= 0 ? 'Due on receipt' : `Net ${terms} days`;
+  const biz = businessName(profile);
+  const stamp = inv.status === 'paid' ? ['Paid', 'border-emerald-700 text-emerald-700'] : inv.status === 'void' ? ['Void', 'border-red-700 text-red-700'] : null;
   return (
     <>
-      <div className="no-print mb-4 flex justify-end"><Button icon={Printer} onClick={() => window.print()}>Print or save as PDF</Button></div>
-      <article className="print-area mx-auto w-full max-w-[210mm] rounded-2xl bg-white p-4 text-ink-900 shadow-sm ring-1 ring-ink-200 sm:p-12 print:max-w-none print:p-0 print:shadow-none print:ring-0" aria-label={`Invoice ${inv.number}`}>
-        <header className="flex flex-wrap items-start justify-between gap-4 border-b-2 border-brand-500 pb-6">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight">{businessName(profile)}</h2>
-            {profile.display_name && profile.truck_label && <p className="text-sm text-ink-600">{profile.display_name}</p>}
-            {email && <p className="text-sm text-ink-600">{email}</p>}
-          </div>
-          <div className="text-right">
-            <p className="text-3xl font-extrabold uppercase tracking-wide text-brand-600">Invoice</p>
-            <p className="mt-1 text-sm font-semibold">{inv.number}</p>
-            {inv.status === 'void' && <p className="mt-1 text-sm font-bold uppercase text-red-600">Void</p>}
-            {inv.status === 'paid' && <p className="mt-1 text-sm font-bold uppercase text-emerald-600">Paid</p>}
+      <div className="no-print mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Link to={`/invoices/${inv.id}`} className="inline-flex items-center gap-1 text-sm font-bold text-ink-500 hover:text-ink-900 dark:hover:text-white"><ArrowLeft size={14} /> Back to {inv.number}</Link>
+        <div className="flex gap-2">
+          <Button variant="outline" icon={Mail} as="a" href={mailtoLink(inv, profile)}>Email</Button>
+          <Button icon={Printer} onClick={() => window.print()}>Print or save as PDF</Button>
+        </div>
+      </div>
+
+      <article className="print-area relative mx-auto flex w-full max-w-[210mm] flex-col overflow-hidden bg-white text-[13px] leading-snug text-ink-900 shadow-[0_1px_0_rgba(0,0,0,0.08),0_24px_48px_-24px_rgba(0,0,0,0.5)] print:min-h-[297mm] print:max-w-none print:shadow-none sm:min-h-[297mm]" style={EXACT} aria-label={`Invoice ${inv.number}`}>
+        <header className="bg-ink-950 px-5 pb-7 pt-8 text-white sm:px-[14mm]" style={EXACT}>
+          <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+            <div className="min-w-0">
+              <p className="font-display text-[28px] font-bold uppercase leading-none tracking-[0.06em]">{biz}</p>
+              {profile.display_name && profile.truck_label && <p className="mt-1.5 text-[13px] text-ink-300">{profile.display_name}</p>}
+            </div>
+            <div className="text-right">
+              <p className="font-display text-[44px] font-bold uppercase leading-none tracking-[0.12em] text-brand-400">Invoice</p>
+              <p className="mt-1.5 text-sm font-bold tracking-wide">{inv.number}</p>
+            </div>
           </div>
         </header>
+        <div className="h-[5px] bg-brand-500" style={EXACT} aria-hidden />
 
-        <section className="mt-6 grid gap-6 sm:grid-cols-2">
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-500">Bill to</h3>
-            <p className="mt-1 font-semibold">{inv.customer}</p>
-            {inv.customer_address && <p className="whitespace-pre-line text-sm text-ink-700">{inv.customer_address}</p>}
-            {inv.customer_email && <p className="text-sm text-ink-700">{inv.customer_email}</p>}
-          </div>
-          <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-sm sm:justify-self-end">
-            <dt className="text-ink-500">Issued</dt><dd className="text-right font-medium">{d(inv.issue_date)}</dd>
-            {inv.due_date && <><dt className="text-ink-500">Due</dt><dd className="text-right font-medium">{d(inv.due_date)}</dd></>}
-            <dt className="text-ink-500">Amount due</dt><dd className="text-right text-base font-bold">{m(t.balance)}</dd>
-          </dl>
-        </section>
+        <div className="flex-1 px-5 py-8 sm:px-[14mm]">
+          <section className="grid gap-8 sm:grid-cols-[1.2fr_1fr]">
+            <div>
+              <p className={LABEL}>Bill to</p>
+              <p className="mt-1.5 text-base font-bold">{inv.customer}</p>
+              {inv.customer_address && <p className="mt-0.5 whitespace-pre-line text-ink-700">{inv.customer_address}</p>}
+              {inv.customer_email && <p className="mt-0.5 text-ink-700">{inv.customer_email}</p>}
+            </div>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 self-start sm:justify-self-end">
+              <dt className="text-ink-500">Invoice no.</dt><dd className="text-right font-bold">{inv.number}</dd>
+              <dt className="text-ink-500">Issued</dt><dd className="text-right font-bold">{fmtDay(inv.issue_date)}</dd>
+              {inv.due_date && <><dt className="text-ink-500">Due</dt><dd className="text-right font-bold">{fmtDay(inv.due_date)}</dd></>}
+              {termsText && <><dt className="text-ink-500">Terms</dt><dd className="text-right">{termsText}</dd></>}
+            </dl>
+          </section>
 
-        <div className="mt-8 overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead><tr className="border-b border-ink-300 text-xs uppercase tracking-wide text-ink-500">
-              <th className="py-2 pr-3 font-semibold">Description</th><th className="px-3 py-2 text-right font-semibold">Qty</th><th className="hidden px-3 py-2 text-right font-semibold sm:table-cell print:table-cell">Unit price</th><th className="py-2 pl-3 text-right font-semibold">Amount</th>
-            </tr></thead>
+          <table className="mt-9 w-full text-left">
+            <thead>
+              <tr className="border-b-2 border-ink-900 text-[10px] font-bold uppercase tracking-[0.14em] text-ink-600">
+                <th className="py-2 pr-3">Description</th><th className="w-12 px-2 py-2 text-right">Qty</th>
+                <th className="hidden w-28 px-2 py-2 text-right sm:table-cell print:table-cell">Price each</th><th className="w-28 py-2 pl-2 text-right">Amount</th>
+              </tr>
+            </thead>
             <tbody>
-              {inv.items.map((it, i) => (
-                <tr key={i} className="border-b border-ink-100 align-top">
-                  <td className="py-2.5 pr-3">{it.description}<span className="block text-xs text-ink-500 sm:hidden print:hidden">{m(it.unit_cents)} each</span></td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{it.qty}</td>
-                  <td className="hidden px-3 py-2.5 text-right tabular-nums sm:table-cell print:table-cell">{m(it.unit_cents)}</td>
-                  <td className="py-2.5 pl-3 text-right font-medium tabular-nums">{m(lineCents(it))}</td>
+              {(inv.items || []).map((it, i) => (
+                <tr key={i} className="break-inside-avoid border-b border-ink-200 align-top">
+                  <td className="py-3 pr-3">{it.description}<span className="block text-xs text-ink-500 sm:hidden print:hidden">{m(it.unit_cents)} each</span></td>
+                  <td className="px-2 py-3 text-right tabular-nums">{it.qty}</td>
+                  <td className="hidden px-2 py-3 text-right tabular-nums sm:table-cell print:table-cell">{m(it.unit_cents)}</td>
+                  <td className="py-3 pl-2 text-right font-bold tabular-nums">{m(lineCents(it))}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+
+          <div className="mt-6 flex break-inside-avoid justify-end">
+            <dl className="w-full max-w-[18rem] tabular-nums">
+              <div className="flex justify-between py-1"><dt className="text-ink-600">Subtotal</dt><dd>{m(t.subtotal)}</dd></div>
+              {t.discount > 0 && <div className="flex justify-between py-1"><dt className="text-ink-600">Discount</dt><dd>-{m(t.discount)}</dd></div>}
+              {t.tax > 0 && <div className="flex justify-between py-1"><dt className="text-ink-600">Tax ({inv.tax_pct}%)</dt><dd>{m(t.tax)}</dd></div>}
+              <div className="mt-1 flex justify-between border-t border-ink-900 py-1.5 font-bold"><dt>Total</dt><dd>{m(t.total)}</dd></div>
+              {t.paid > 0 && <div className="flex justify-between py-1"><dt className="text-ink-600">Paid</dt><dd>-{m(t.paid)}</dd></div>}
+              <div className="mt-1 flex items-baseline justify-between bg-brand-100 px-3 py-2.5" style={EXACT}><dt className="text-[11px] font-bold uppercase tracking-[0.14em]">Amount due</dt><dd className="text-xl font-bold">{m(t.balance)}</dd></div>
+            </dl>
+          </div>
+
+          {inv.notes && (
+            <section className="mt-9 break-inside-avoid border-l-[3px] border-brand-500 bg-ink-50 py-3 pl-4 pr-4" style={EXACT}>
+              <p className={LABEL}>Payment details and notes</p>
+              <p className="mt-1.5 whitespace-pre-line text-ink-800">{inv.notes}</p>
+            </section>
+          )}
         </div>
 
-        <dl className="ml-auto mt-6 max-w-xs space-y-1.5 text-sm tabular-nums">
-          <div className="flex justify-between"><dt className="text-ink-600">Subtotal</dt><dd>{m(t.subtotal)}</dd></div>
-          {t.discount > 0 && <div className="flex justify-between"><dt className="text-ink-600">Discount</dt><dd>-{m(t.discount)}</dd></div>}
-          {t.tax > 0 && <div className="flex justify-between"><dt className="text-ink-600">Tax ({inv.tax_pct}%)</dt><dd>{m(t.tax)}</dd></div>}
-          <div className="flex justify-between border-t border-ink-300 pt-2 text-lg font-bold"><dt>Total</dt><dd>{m(t.total)}</dd></div>
-          {t.paid > 0 && <div className="flex justify-between"><dt className="text-ink-600">Paid</dt><dd>-{m(t.paid)}</dd></div>}
-          {t.paid > 0 && <div className="flex justify-between font-bold"><dt>Balance due</dt><dd>{m(t.balance)}</dd></div>}
-        </dl>
+        {stamp && <span aria-hidden className={`pointer-events-none absolute right-[14mm] top-[62mm] -rotate-12 rounded-[6px] border-4 px-4 py-1 font-display text-4xl font-bold uppercase tracking-[0.2em] opacity-70 ${stamp[1]}`}>{stamp[0]}</span>}
 
-        {inv.notes && (
-          <section className="mt-10 border-t border-ink-200 pt-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-500">Payment details and notes</h3>
-            <p className="mt-1 whitespace-pre-line text-sm text-ink-700">{inv.notes}</p>
-          </section>
-        )}
-        <footer className="mt-10 text-center text-xs text-ink-500">Thank you for your business.</footer>
+        <footer className="mx-5 flex items-center justify-between gap-4 border-t border-ink-300 py-4 text-[11px] text-ink-500 sm:mx-[14mm]">
+          <span>Thank you for your business.</span>
+          <span>{biz} · {inv.number}</span>
+        </footer>
       </article>
     </>
   );

@@ -15,3 +15,9 @@ export function useLoadVehicleOptions() {
 
 export const tripMinutes = (t) => (t.started_at && t.ended_at ? Math.max(0, new Date(t.ended_at) - new Date(t.started_at)) : 0);
 export const tripTitle = (t) => (t.origin_label || t.dest_label ? `${t.origin_label || 'Start'} to ${t.dest_label || 'End'}` : 'Trip');
+
+export const KM_PER_MI = 1.609344;
+/** Metres -> number in the driver's unit (km or mi). */
+export const toUnit = (m, unit = 'km') => (Number(m) || 0) / 1000 / (unit === 'mi' ? KM_PER_MI : 1);
+/** Metres per second -> whole km/h or mph. */
+export const speedValue = (mps, unit = 'km') => Math.round((Number(mps) || 0) * 3.6 / (unit === 'mi' ? KM_PER_MI : 1));
