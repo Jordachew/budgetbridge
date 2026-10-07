@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sumCents, byCategory, loadFinance, settleUp, discrepancies, currentOdometer, fuelEconomy, within } from '../../app/js/calc.js';
-import { periodRange } from '../../app/js/dates.js';
+import { sumCents, byCategory, loadFinance, settleUp, discrepancies, currentOdometer, fuelEconomy, within } from '../../src/core/calc.js';
+import { periodRange } from '../../src/core/dates.js';
 
 const E = (o) => ({ currency: 'JMD', amount_cents: 100, category: 'fuel', paid_by: 'driver', ...o });
 test('sums one currency only; integer exact', () => {

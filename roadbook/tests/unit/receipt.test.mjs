@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseReceiptText, findDate, findTotal, wordsToNumber, parseSpokenExpense, guessCategory, findLitres } from '../../app/js/receipt.js';
+import { parseReceiptText, findDate, findTotal, wordsToNumber, parseSpokenExpense, guessCategory, findLitres } from '../../src/core/receipt.js';
 
 const NOW = new Date('2026-10-03T12:00:00-05:00');
 

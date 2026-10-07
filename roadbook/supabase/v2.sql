@@ -175,3 +175,32 @@ create policy settlements_delete on public.rb_settlements for delete to authenti
   using (user_id = (select auth.uid()));
 revoke all on public.rb_settlements from anon, authenticated;
 grant select, insert, update, delete on public.rb_settlements to authenticated;
+
+-- "Delete my data" must also erase the v2 tables (the shared login itself is kept).
+create or replace function public.rb_delete_my_account()
+returns void language plpgsql security definer set search_path = '' as $$
+declare v uuid := (select auth.uid());
+begin
+  if v is null then raise exception 'Sign in first' using errcode = '28000'; end if;
+  delete from public.rb_crews where owner_id = v;            -- members, messages, alerts go with the crew
+  delete from public.rb_crew_members where user_id = v;
+  delete from public.rb_messages where user_id = v;
+  delete from public.rb_road_alerts where user_id = v;
+  delete from public.rb_deliveries where user_id = v;
+  delete from public.rb_loads where user_id = v or created_by = v;
+  delete from public.rb_expenses where user_id = v;
+  delete from public.rb_income where user_id = v;
+  delete from public.rb_trips where user_id = v;
+  delete from public.rb_reminders where user_id = v;
+  delete from public.rb_route_plans where user_id = v;
+  delete from public.rb_vehicles where user_id = v;
+  delete from public.rb_invoices where user_id = v;
+  delete from public.rb_maintenance where user_id = v;
+  delete from public.rb_documents where user_id = v;
+  delete from public.rb_places where user_id = v;
+  delete from public.rb_settlements where user_id = v or driver_id = v;
+  delete from public.rb_profiles where id = v;
+  -- The login itself (auth.users) is NOT deleted here because other apps in this project may use it.
+end $$;
+revoke all on function public.rb_delete_my_account() from public, anon;
+grant execute on function public.rb_delete_my_account() to authenticated;

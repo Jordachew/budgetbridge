@@ -2,9 +2,9 @@ import 'fake-indexeddb/auto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import * as store from '../../app/js/store.js';
-import { createSync } from '../../app/js/sync.js';
-import { TABLES } from '../../app/js/db.js';
+import * as store from '../../src/core/store.js';
+import { createSync } from '../../src/core/sync.js';
+import { TABLES } from '../../src/core/db.js';
 
 function fakeApi() {
   const server = Object.fromEntries(TABLES.map((t) => [t, new Map()]));
