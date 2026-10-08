@@ -1,21 +1,31 @@
 import { Store } from "../store.js";
 import { budgetByProject, fmtMoney, MONTH_NAMES, slugify } from "../calc.js";
-import { toast, openModal, debounce } from "../ui.js";
+import { toast, openModal } from "../ui.js";
 import { icon } from "../icons.js";
 
 let planFy = null;
 let periodMode = "quarter"; // "month" | "quarter"
 const QUARTERS = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]];
 
-const commit = debounce((fy, code, month, amount) => Store.setBudgetAmount(fy, code, month, amount), 350);
+// A quarterly edit fires one commit per underlying month (3 calls). A single
+// shared debounce would cancel the first two on every keystroke, so each
+// (project, month) pair gets its own independent timer instead.
+const commitTimers = new Map();
+function commit(fy, code, month, amount) {
+  const key = `${fy}:${code}:${month}`;
+  clearTimeout(commitTimers.get(key));
+  commitTimers.set(key, setTimeout(() => Store.setBudgetAmount(fy, code, month, amount), 350));
+}
 
 export function render(root) {
   const s = Store.state;
   if (!planFy) planFy = s.fiscalYear;
   if (!s.categories.length) {
-    root.innerHTML = `<div class="view-head"><h1>Planning</h1></div><div class="card empty-state">Load data from <b>Data &amp; Settings</b> first, or add a cost item group below to start from scratch.
-      <div style="margin-top:12px"><button class="btn btn-primary" id="add-cat-empty">Add first cost item group</button></div></div>`;
-    root.querySelector("#add-cat-empty").addEventListener("click", () => addCategoryModal(root));
+    root.innerHTML = `<div class="view-head"><h1>Planning</h1></div><div class="card empty-state">${Store.isAdmin
+      ? `Load data from <b>Data &amp; Settings</b> first, or add a cost item group below to start from scratch.
+      <div style="margin-top:12px"><button class="btn btn-primary" id="add-cat-empty">Add first cost item group</button></div>`
+      : `There's nothing set up yet — ask an admin to add cost item groups and assign you to one under <b>Data &amp; Settings → Users &amp; access</b>.`}</div>`;
+    root.querySelector("#add-cat-empty")?.addEventListener("click", () => addCategoryModal(root));
     return;
   }
   const budgetMap = budgetByProject(s.budgetLines, planFy);
@@ -26,7 +36,7 @@ export function render(root) {
   root.innerHTML = `
     <div class="view-head">
       <h1>Planning</h1>
-      <p class="lead">Enter the budget for each cost item by month or by quarter. Changes save automatically to this browser. Use <b>Data &amp; Settings → Export workbook</b> to share the plan with the rest of the team.</p>
+      <p class="lead">Enter the budget for each cost item by month or by quarter. Everyone sees the full rollup; you can only edit the cost item group(s) assigned to you. Changes save immediately for the whole team — nothing to export or share.</p>
     </div>
 
     <div class="filter-bar">
@@ -43,7 +53,7 @@ export function render(root) {
       </div>
       <div class="field-row" style="margin-left:auto">
         <button class="btn btn-sm" id="copy-fy">Copy from another year…</button>
-        <button class="btn btn-sm" id="add-cat">+ Cost item group</button>
+        ${Store.isAdmin ? `<button class="btn btn-sm" id="add-cat">+ Cost item group</button>` : ""}
       </div>
     </div>
 
@@ -72,10 +82,10 @@ export function render(root) {
 
   root.querySelector("#plan-fy").addEventListener("change", (e) => { planFy = Number(e.target.value); render(root); });
   root.querySelectorAll(".pill-select button").forEach((b) => b.addEventListener("click", () => { periodMode = b.getAttribute("data-mode"); render(root); }));
-  root.querySelector("#add-cat").addEventListener("click", () => addCategoryModal(root));
+  root.querySelector("#add-cat")?.addEventListener("click", () => addCategoryModal(root));
   root.querySelector("#copy-fy").addEventListener("click", () => copyFromYearModal(root, yearList));
 
-  root.querySelectorAll("input.cell-input").forEach((input) => {
+  root.querySelectorAll("input.cell-input:not([disabled])").forEach((input) => {
     input.addEventListener("input", () => {
       const code = input.dataset.code;
       const periodIndex = Number(input.dataset.period);
@@ -165,22 +175,23 @@ function renderCategoryBlock(cat, s, budgetMap) {
   const projects = s.projects.filter((p) => p.categoryId === cat.id);
   const catTotal = projects.reduce((sum, p) => sum + periodColsTotal(budgetMap, p.code), 0);
   const fy = planFy;
+  const canEditCat = Store.canEditCategory(cat.id);
   return `
-    <tr class="category-row" data-category="${cat.id}"><td class="label-cell">${cat.name}</td>
+    <tr class="category-row" data-category="${cat.id}"><td class="label-cell">${cat.name}${canEditCat ? "" : ` <span class="badge-soft">view only</span>`}</td>
       ${periodCols().map((_, i) => `<td class="total-cell" data-period-total="${i}">$${fmtMoney(projects.reduce((s2, p) => s2 + periodValue(budgetMap, p.code, i), 0), { compact: true })}</td>`).join("")}
       <td class="total-cell" data-cat-total-value>$${fmtMoney(catTotal, { compact: true })}</td>
-      <td style="text-align:center"><button class="btn btn-sm" data-add-project="${cat.id}" title="Add cost item">+</button></td>
+      <td style="text-align:center">${canEditCat ? `<button class="btn btn-sm" data-add-project="${cat.id}" title="Add cost item">+</button>` : ""}</td>
     </tr>
     ${projects.map((p) => {
       const hasNote = s.planNotes.some((n) => n.fiscalYear === fy && n.projectCode === p.code && n.text);
       return `
       <tr data-project="${cssEscape(p.code)}" data-category-member="${cat.id}">
         <td class="sub-label-cell">${p.name} <span class="badge-soft">${p.code}</span></td>
-        ${periodCols().map((_, i) => `<td><input class="cell-input" type="number" step="1" min="0" data-code="${p.code}" data-period="${i}" value="${round0(periodValue(budgetMap, p.code, i))}" /></td>`).join("")}
+        ${periodCols().map((_, i) => `<td><input class="cell-input" type="number" step="1" min="0" data-code="${p.code}" data-period="${i}" value="${round0(periodValue(budgetMap, p.code, i))}" ${canEditCat ? "" : "disabled"} /></td>`).join("")}
         <td class="total-cell row-total-value">$${fmtMoney(periodColsTotal(budgetMap, p.code), { compact: true })}</td>
         <td style="text-align:center;white-space:nowrap">
-          <button class="btn btn-sm ${hasNote ? "btn-has-note" : ""}" data-notes="${p.code}" title="${hasNote ? "View/edit note" : "Add note"}">${icon("note", { size: 13, strokeWidth: 2 })}</button>
-          <button class="btn btn-sm btn-danger" data-del-project="${p.code}" title="Remove cost item">×</button>
+          <button class="btn btn-sm ${hasNote ? "btn-has-note" : ""}" data-notes="${p.code}" title="${hasNote ? "View note" : "Add note"}">${icon("note", { size: 13, strokeWidth: 2 })}</button>
+          ${canEditCat ? `<button class="btn btn-sm btn-danger" data-del-project="${p.code}" title="Remove cost item">×</button>` : ""}
         </td>
       </tr>
     `;
@@ -247,19 +258,21 @@ function addProjectModal(root, categoryId) {
 function notesModal(root, code) {
   const proj = Store.state.projects.find((p) => p.code === code);
   const existing = Store.state.planNotes.find((n) => n.fiscalYear === planFy && n.projectCode === code);
+  const canEdit = proj && Store.canEditCategory(proj.categoryId);
   openModal(`
     <h2>Note — ${proj ? proj.name : code} <span class="badge-soft">FY${planFy}</span></h2>
-    <p class="hint">Context for this cost item's plan — an assumption, a rationale, a flag for next review. Visible to anyone who opens this workbook.</p>
-    <div class="field" style="margin-top:8px"><textarea id="note-text" rows="5" style="width:100%;resize:vertical;font:inherit" placeholder="e.g. Includes the Q3 campaign refresh; pending sign-off from brand team.">${existing ? escapeHtml(existing.text) : ""}</textarea></div>
+    <p class="hint">Context for this cost item's plan — an assumption, a rationale, a flag for next review. Visible to everyone.</p>
+    <div class="field" style="margin-top:8px"><textarea id="note-text" rows="5" style="width:100%;resize:vertical;font:inherit" placeholder="e.g. Includes the Q3 campaign refresh; pending sign-off from brand team." ${canEdit ? "" : "disabled"}>${existing ? escapeHtml(existing.text) : ""}</textarea></div>
+    ${canEdit ? "" : `<p class="hint">Only the manager for this cost item group can edit this note.</p>`}
     <div class="modal-actions">
-      ${existing ? `<button class="btn btn-danger" id="note-delete" style="margin-right:auto">Delete note</button>` : ""}
-      <button class="btn" data-close>Cancel</button>
-      <button class="btn btn-primary" id="note-save">Save note</button>
+      ${canEdit && existing ? `<button class="btn btn-danger" id="note-delete" style="margin-right:auto">Delete note</button>` : ""}
+      <button class="btn" data-close>${canEdit ? "Cancel" : "Close"}</button>
+      ${canEdit ? `<button class="btn btn-primary" id="note-save">Save note</button>` : ""}
     </div>
   `, {
     onMount: (modal, close) => {
       modal.querySelector("[data-close]").addEventListener("click", close);
-      modal.querySelector("#note-save").addEventListener("click", async () => {
+      modal.querySelector("#note-save")?.addEventListener("click", async () => {
         await Store.setPlanNote(planFy, code, modal.querySelector("#note-text").value);
         close(); render(root);
       });
@@ -291,8 +304,8 @@ function copyFromYearModal(root, yearList) {
           id: `${planFy}:${b.projectCode}:${b.month}`, fiscalYear: planFy, projectCode: b.projectCode, month: b.month,
           amount: Math.round(b.amount * growth * 100) / 100,
         }));
-        await Store.bulkSetBudgetLines(lines);
-        toast(`Copied ${lines.length} line(s) from FY${source}`, "ok");
+        const applied = await Store.bulkSetBudgetLines(lines);
+        toast(`Copied ${applied} line(s) from FY${source}${applied < lines.length ? " (some skipped — not your cost item group)" : ""}`, "ok");
         close(); render(root);
       });
     },

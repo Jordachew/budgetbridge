@@ -5,132 +5,54 @@
       __defProp(target, name, { get: all[name], enumerable: true });
   };
 
-  // js/db.js
-  var DB_NAME = "budgetbridge";
-  var DB_VERSION = 2;
-  var _db = null;
-  function openDb() {
-    if (_db) return Promise.resolve(_db);
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, DB_VERSION);
-      req.onupgradeneeded = (e) => {
-        const db2 = req.result;
-        if (!db2.objectStoreNames.contains("meta")) {
-          db2.createObjectStore("meta", { keyPath: "key" });
-        }
-        if (!db2.objectStoreNames.contains("categories")) {
-          db2.createObjectStore("categories", { keyPath: "id" });
-        }
-        if (!db2.objectStoreNames.contains("projects")) {
-          db2.createObjectStore("projects", { keyPath: "code" });
-        }
-        if (!db2.objectStoreNames.contains("budgetLines")) {
-          const s = db2.createObjectStore("budgetLines", { keyPath: "id" });
-          s.createIndex("byFyProject", ["fiscalYear", "projectCode"], { unique: false });
-          s.createIndex("byFy", "fiscalYear", { unique: false });
-        }
-        if (!db2.objectStoreNames.contains("transactions")) {
-          const s = db2.createObjectStore("transactions", { keyPath: "id" });
-          s.createIndex("byProject", "project", { unique: false });
-          s.createIndex("byYear", "year", { unique: false });
-          s.createIndex("byBatch", "batchId", { unique: false });
-        }
-        if (!db2.objectStoreNames.contains("importBatches")) {
-          db2.createObjectStore("importBatches", { keyPath: "id" });
-        }
-        if (!db2.objectStoreNames.contains("planNotes")) {
-          const s = db2.createObjectStore("planNotes", { keyPath: "id" });
-          s.createIndex("byFyProject", ["fiscalYear", "projectCode"], { unique: false });
-        }
-      };
-      req.onsuccess = () => {
-        _db = req.result;
-        resolve(_db);
-      };
-      req.onerror = () => reject(req.error);
-    });
-  }
-  function tx(storeNames, mode, fn) {
-    return openDb().then((db2) => new Promise((resolve, reject) => {
-      const t = db2.transaction(storeNames, mode);
-      const stores = {};
-      for (const n of [].concat(storeNames)) stores[n] = t.objectStore(n);
-      let result;
-      Promise.resolve(fn(stores, t)).then((r) => {
-        result = r;
-      }).catch(reject);
-      t.oncomplete = () => resolve(result);
-      t.onerror = () => reject(t.error);
-      t.onabort = () => reject(t.error || new Error("transaction aborted"));
-    }));
-  }
-  function reqToPromise(req) {
-    return new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  }
-  var db = {
-    async getAll(store) {
-      return tx(store, "readonly", (s) => reqToPromise(s[store].getAll()));
-    },
-    async get(store, key) {
-      return tx(store, "readonly", (s) => reqToPromise(s[store].get(key)));
-    },
-    async put(store, value) {
-      return tx(store, "readwrite", (s) => reqToPromise(s[store].put(value)));
-    },
-    async bulkPut(store, values) {
-      return tx(store, "readwrite", (s) => {
-        for (const v of values) s[store].put(v);
-      });
-    },
-    async delete(store, key) {
-      return tx(store, "readwrite", (s) => reqToPromise(s[store].delete(key)));
-    },
-    async clear(store) {
-      return tx(store, "readwrite", (s) => reqToPromise(s[store].clear()));
-    },
-    async count(store) {
-      return tx(store, "readonly", (s) => reqToPromise(s[store].count()));
-    },
-    async deleteByIndex(store, indexName, value) {
-      return tx(store, "readwrite", (s) => new Promise((resolve, reject) => {
-        const idx = s[store].index(indexName);
-        const req = idx.openCursor(IDBKeyRange.only(value));
-        req.onsuccess = () => {
-          const cur = req.result;
-          if (cur) {
-            cur.delete();
-            cur.continue();
-          } else resolve();
-        };
-        req.onerror = () => reject(req.error);
-      }));
-    },
-    async wipeAll() {
-      return tx(["meta", "categories", "projects", "budgetLines", "transactions", "importBatches", "planNotes"], "readwrite", (s) => {
-        for (const n of Object.keys(s)) s[n].clear();
-      });
+  // js/api.js
+  var ApiError = class extends Error {
+    constructor(message, status) {
+      super(message);
+      this.status = status;
     }
   };
-  async function getMeta(key, fallback = null) {
-    const row = await db.get("meta", key);
-    return row ? row.value : fallback;
-  }
-  async function setMeta(key, value) {
-    return db.put("meta", { key, value });
-  }
-  async function estimateUsage() {
-    if (navigator.storage && navigator.storage.estimate) {
-      try {
-        return await navigator.storage.estimate();
-      } catch (e) {
-        return null;
-      }
+  async function call(method, path, body) {
+    const res = await fetch(path, {
+      method,
+      credentials: "same-origin",
+      headers: body ? { "Content-Type": "application/json" } : void 0,
+      body: body ? JSON.stringify(body) : void 0
+    });
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (e) {
     }
-    return null;
+    if (!res.ok) throw new ApiError(data && data.error || `Request failed (${res.status})`, res.status);
+    return data;
   }
+  var api = {
+    login: (username, password) => call("POST", "/api/login", { username, password }),
+    logout: () => call("POST", "/api/logout"),
+    me: () => call("GET", "/api/me"),
+    changeOwnPassword: (oldPassword, newPassword) => call("POST", "/api/me/password", { oldPassword, newPassword }),
+    bootstrap: () => call("GET", "/api/bootstrap"),
+    upsertCategory: (cat) => call("POST", "/api/categories", cat),
+    renameCategory: (id, name) => call("PATCH", `/api/categories/${encodeURIComponent(id)}`, { name }),
+    deleteCategory: (id) => call("DELETE", `/api/categories/${encodeURIComponent(id)}`),
+    upsertProject: (proj) => call("POST", "/api/projects", proj),
+    updateProject: (code, patch) => call("PATCH", `/api/projects/${encodeURIComponent(code)}`, patch),
+    deleteProject: (code) => call("DELETE", `/api/projects/${encodeURIComponent(code)}`),
+    setBudgetAmount: (fiscalYear, projectCode, month, amount) => call("POST", "/api/budget-lines", { fiscalYear, projectCode, month, amount }),
+    bulkSetBudgetLines: (lines) => call("POST", "/api/budget-lines/bulk", { lines }),
+    setPlanNote: (fiscalYear, projectCode, text) => call("POST", "/api/plan-notes", { fiscalYear, projectCode, text }),
+    importTransactions: (rows, meta) => call("POST", "/api/transactions/import", { rows, ...meta }),
+    deleteBatch: (id) => call("DELETE", `/api/transactions/batch/${encodeURIComponent(id)}`),
+    clearTransactions: () => call("POST", "/api/admin/clear-transactions"),
+    wipeAll: () => call("POST", "/api/admin/wipe-all"),
+    adminListUsers: () => call("GET", "/api/admin/users"),
+    adminCreateUser: (user) => call("POST", "/api/admin/users", user),
+    adminUpdateUser: (id, patch) => call("PATCH", `/api/admin/users/${encodeURIComponent(id)}`, patch),
+    adminDeleteUser: (id) => call("DELETE", `/api/admin/users/${encodeURIComponent(id)}`),
+    adminSetAssignments: (id, categoryIds) => call("PUT", `/api/admin/users/${encodeURIComponent(id)}/assignments`, { categoryIds }),
+    ApiError
+  };
 
   // js/calc.js
   var MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -225,23 +147,28 @@
     const monthsElapsed = Math.max(1, asOfMonth);
     const ytdActual = actualByMonth.slice(0, monthsElapsed).reduce((a, b) => a + b, 0);
     const ytdEncumbrance = (encumbranceByMonth || []).slice(0, monthsElapsed).reduce((a, b) => a + b, 0);
+    const committedToDate = ytdActual + ytdEncumbrance;
     const avgMonthly = ytdActual / monthsElapsed;
     const last3Start = Math.max(0, monthsElapsed - 3);
     const last3Slice = actualByMonth.slice(last3Start, monthsElapsed);
     const avgMonthlyTrend = last3Slice.length ? last3Slice.reduce((a, b) => a + b, 0) / last3Slice.length : avgMonthly;
     const remainingMonths = Math.max(0, 12 - monthsElapsed);
-    const projectedAnnual = ytdActual + avgMonthly * remainingMonths;
-    const projectedAnnualTrend = ytdActual + avgMonthlyTrend * remainingMonths;
+    const projectedAnnual = committedToDate + avgMonthly * remainingMonths;
+    const projectedAnnualTrend = committedToDate + avgMonthlyTrend * remainingMonths;
     const hasBudget = budgetTotal > 0;
     const projectedVariance = hasBudget ? projectedAnnual - budgetTotal : projectedAnnual;
     const projectedVariancePct = hasBudget ? projectedVariance / budgetTotal : null;
-    const status = statusFromVariance(hasBudget ? projectedVariancePct : 0, hasBudget);
+    const overBudgetNow = hasBudget && committedToDate > budgetTotal;
+    const overBudgetAmount = overBudgetNow ? committedToDate - budgetTotal : 0;
+    const status = overBudgetNow ? "critical" : statusFromVariance(hasBudget ? projectedVariancePct : 0, hasBudget);
     const paceExpected = monthsElapsed / 12;
-    const paceActual = hasBudget ? ytdActual / budgetTotal : null;
+    const paceActual = hasBudget ? committedToDate / budgetTotal : null;
+    const aheadOfPace = hasBudget && paceActual - paceExpected > 0.1;
     return {
       monthsElapsed,
       ytdActual,
       ytdEncumbrance,
+      committedToDate,
       avgMonthly,
       avgMonthlyTrend,
       remainingMonths,
@@ -251,6 +178,9 @@
       projectedVariance,
       projectedVariancePct,
       status,
+      overBudgetNow,
+      overBudgetAmount,
+      aheadOfPace,
       paceExpected,
       paceActual
     };
@@ -331,24 +261,38 @@
   }
 
   // js/store.js
-  function nowIso() {
-    return (/* @__PURE__ */ new Date()).toISOString();
+  function prefGet(key, fallback) {
+    try {
+      const v = localStorage.getItem(`bb:${key}`);
+      return v == null ? fallback : JSON.parse(v);
+    } catch (e) {
+      return fallback;
+    }
+  }
+  function prefSet(key, value) {
+    try {
+      localStorage.setItem(`bb:${key}`, JSON.stringify(value));
+    } catch (e) {
+    }
   }
   var StoreImpl = class {
     constructor() {
       this.state = {
         ready: false,
+        authed: false,
+        me: null,
+        // { id, name, username, role, assignedCategoryIds }
         categories: [],
         projects: [],
         budgetLines: [],
         transactions: [],
         importBatches: [],
+        planNotes: [],
         fiscalYear: (/* @__PURE__ */ new Date()).getFullYear(),
         asOfMonth: (/* @__PURE__ */ new Date()).getMonth() + 1,
         theme: "system",
         route: "dashboard",
-        drill: { categoryId: null, projectCode: null },
-        planNotes: []
+        drill: { categoryId: null, projectCode: null }
       };
       this._listeners = /* @__PURE__ */ new Set();
     }
@@ -370,36 +314,74 @@
       years.add(this.state.fiscalYear);
       return [...years].sort((a, b) => a - b);
     }
+    /** Can the signed-in user edit budget/notes/cost items under this cost item group? */
+    canEditCategory(categoryId) {
+      const me = this.state.me;
+      if (!me) return false;
+      if (me.role === "admin") return true;
+      return me.assignedCategoryIds.includes(categoryId);
+    }
+    canEditProject(projectCode) {
+      const proj = this.state.projects.find((p) => p.code === projectCode);
+      return proj ? this.canEditCategory(proj.categoryId) : false;
+    }
+    get isAdmin() {
+      var _a;
+      return ((_a = this.state.me) == null ? void 0 : _a.role) === "admin";
+    }
+    /** Call once at boot: checks the session, then loads shared data if signed in. */
+    async init() {
+      const theme = prefGet("theme", "system");
+      const fiscalYear = prefGet("fiscalYear", null);
+      const asOfMonth = prefGet("asOfMonth", null);
+      this.setState({ theme, ...fiscalYear ? { fiscalYear } : {}, ...asOfMonth ? { asOfMonth } : {} });
+      this._applyTheme();
+      try {
+        await api.me();
+      } catch (e) {
+        this.setState({ ready: true, authed: false });
+        return;
+      }
+      await this.loadAll();
+    }
+    async login(username, password) {
+      const { user } = await api.login(username, password);
+      await this.loadAll();
+      return user;
+    }
+    async logout() {
+      await api.logout().catch(() => {
+      });
+      this.setState({
+        authed: false,
+        me: null,
+        categories: [],
+        projects: [],
+        budgetLines: [],
+        transactions: [],
+        importBatches: [],
+        planNotes: []
+      });
+    }
     async loadAll() {
-      const [categories, projects, budgetLines, transactions, importBatches, planNotes] = await Promise.all([
-        db.getAll("categories"),
-        db.getAll("projects"),
-        db.getAll("budgetLines"),
-        db.getAll("transactions"),
-        db.getAll("importBatches"),
-        db.getAll("planNotes")
-      ]);
-      const savedFy = await getMeta("fiscalYear", null);
-      const savedAsOf = await getMeta("asOfMonth", null);
-      const theme = await getMeta("theme", "system");
-      let fiscalYear = savedFy;
-      if (!fiscalYear) {
-        const years = /* @__PURE__ */ new Set([...budgetLines.map((b) => b.fiscalYear), ...transactions.map((t) => t.year)]);
+      const data = await api.bootstrap();
+      let fiscalYear = this.state.fiscalYear;
+      if (!prefGet("fiscalYear", null)) {
+        const years = /* @__PURE__ */ new Set([...data.budgetLines.map((b) => b.fiscalYear), ...data.transactions.map((t) => t.year)]);
         fiscalYear = years.size ? Math.max(...years) : (/* @__PURE__ */ new Date()).getFullYear();
       }
       this.setState({
-        categories,
-        projects,
-        budgetLines,
-        transactions,
-        importBatches,
-        planNotes,
+        authed: true,
+        me: data.me,
+        categories: data.categories,
+        projects: data.projects,
+        budgetLines: data.budgetLines,
+        transactions: data.transactions,
+        importBatches: data.importBatches,
+        planNotes: data.planNotes,
         fiscalYear,
-        asOfMonth: savedAsOf || (/* @__PURE__ */ new Date()).getMonth() + 1,
-        theme,
         ready: true
       });
-      this._applyTheme();
     }
     _applyTheme() {
       const t = this.state.theme;
@@ -407,117 +389,134 @@
       else if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
       else document.documentElement.removeAttribute("data-theme");
     }
-    async setTheme(theme) {
-      await setMeta("theme", theme);
+    setTheme(theme) {
+      prefSet("theme", theme);
       this.setState({ theme });
       this._applyTheme();
     }
-    async setFiscalYear(fy) {
-      await setMeta("fiscalYear", fy);
+    setFiscalYear(fy) {
+      prefSet("fiscalYear", fy);
       this.setState({ fiscalYear: fy });
     }
-    async setAsOfMonth(m) {
-      await setMeta("asOfMonth", m);
+    setAsOfMonth(m) {
+      prefSet("asOfMonth", m);
       this.setState({ asOfMonth: m });
     }
     setRoute(route, drill = {}) {
       this.setState({ route, drill: { ...this.state.drill, ...drill } });
     }
-    // ---------- categories ----------
+    // ---------- categories (cost item groups) — admin only ----------
     async upsertCategory(cat) {
       var _a;
       const id = cat.id || slugify(cat.name);
-      const record = { id, name: cat.name, sortOrder: (_a = cat.sortOrder) != null ? _a : this.state.categories.length };
-      await db.put("categories", record);
-      const categories = [...this.state.categories.filter((c) => c.id !== id), record];
-      this.setState({ categories });
-      return record;
+      const { category } = await api.upsertCategory({ id, name: cat.name, sortOrder: (_a = cat.sortOrder) != null ? _a : this.state.categories.length });
+      this.setState({ categories: [...this.state.categories.filter((c) => c.id !== category.id), category] });
+      return category;
+    }
+    async renameCategory(id, name) {
+      await api.renameCategory(id, name);
+      this.setState({ categories: this.state.categories.map((c) => c.id === id ? { ...c, name } : c) });
     }
     async deleteCategory(id) {
-      const inUse = this.state.projects.some((p) => p.categoryId === id);
-      if (inUse) throw new Error("Category still has projects assigned. Reassign them first.");
-      await db.delete("categories", id);
+      await api.deleteCategory(id);
       this.setState({ categories: this.state.categories.filter((c) => c.id !== id) });
     }
-    // ---------- projects ----------
+    // ---------- projects (cost items) — admin, or the manager who owns the group ----------
     async upsertProject(proj) {
-      const record = { code: proj.code.trim(), name: proj.name.trim(), categoryId: proj.categoryId, active: proj.active !== false };
-      await db.put("projects", record);
-      const projects = [...this.state.projects.filter((p) => p.code !== record.code), record];
-      this.setState({ projects });
-      return record;
+      const { project } = await api.upsertProject({ code: proj.code.trim(), name: proj.name.trim(), categoryId: proj.categoryId });
+      this.setState({ projects: [...this.state.projects.filter((p) => p.code !== project.code), project] });
+      return project;
+    }
+    async updateProject(code, patch) {
+      await api.updateProject(code, patch);
+      this.setState({ projects: this.state.projects.map((p) => p.code === code ? { ...p, ...patch } : p) });
     }
     async deleteProject(code) {
-      await db.delete("projects", code);
-      const budgetLines = this.state.budgetLines.filter((b) => b.projectCode !== code);
-      for (const b of this.state.budgetLines.filter((b2) => b2.projectCode === code)) await db.delete("budgetLines", b.id);
-      const planNotes = this.state.planNotes.filter((n) => n.projectCode !== code);
-      for (const n of this.state.planNotes.filter((n2) => n2.projectCode === code)) await db.delete("planNotes", n.id);
-      this.setState({ projects: this.state.projects.filter((p) => p.code !== code), budgetLines, planNotes });
+      await api.deleteProject(code);
+      this.setState({
+        projects: this.state.projects.filter((p) => p.code !== code),
+        budgetLines: this.state.budgetLines.filter((b) => b.projectCode !== code),
+        planNotes: this.state.planNotes.filter((n) => n.projectCode !== code)
+      });
     }
     // ---------- budget lines ----------
     async setBudgetAmount(fiscalYear, projectCode, month, amount) {
       const id = `${fiscalYear}:${projectCode}:${month}`;
-      const record = { id, fiscalYear, projectCode, month, amount: Number(amount) || 0, updatedAt: nowIso() };
-      await db.put("budgetLines", record);
-      const budgetLines = [...this.state.budgetLines.filter((b) => b.id !== id), record];
-      this.setState({ budgetLines });
+      const value = Number(amount) || 0;
+      await api.setBudgetAmount(fiscalYear, projectCode, month, value);
+      const record = { id, fiscalYear, projectCode, month, amount: value };
+      this.setState({ budgetLines: [...this.state.budgetLines.filter((b) => b.id !== id), record] });
     }
     async bulkSetBudgetLines(lines) {
-      await db.bulkPut("budgetLines", lines);
+      const { applied } = await api.bulkSetBudgetLines(lines);
       const byId = new Map(this.state.budgetLines.map((b) => [b.id, b]));
-      for (const l of lines) byId.set(l.id, l);
+      for (const l of lines) {
+        if (this.canEditProject(l.projectCode)) byId.set(l.id, l);
+      }
       this.setState({ budgetLines: [...byId.values()] });
+      return applied;
     }
-    // ---------- transactions / imports ----------
+    // ---------- transactions / imports (admin) ----------
     async importTransactions(rows, meta) {
-      const batchId = `batch-${Date.now()}`;
-      const withBatch = rows.map((r) => ({ ...r, batchId: r.batchId || batchId }));
-      await db.bulkPut("transactions", withBatch);
-      const batchRecord = { id: batchId, date: nowIso(), rowCount: withBatch.length, ...meta };
-      await db.put("importBatches", batchRecord);
+      const { batch } = await api.importTransactions(rows, meta);
       const byId = new Map(this.state.transactions.map((t) => [t.id, t]));
-      for (const t of withBatch) byId.set(t.id, t);
-      this.setState({ transactions: [...byId.values()], importBatches: [...this.state.importBatches, batchRecord] });
-      return batchRecord;
+      for (const r of rows) byId.set(r.id, { ...r, batchId: batch.id });
+      this.setState({ transactions: [...byId.values()], importBatches: [...this.state.importBatches, batch] });
+      return batch;
+    }
+    async deleteBatch(id) {
+      await api.deleteBatch(id);
+      this.setState({
+        transactions: this.state.transactions.filter((t) => t.batchId !== id),
+        importBatches: this.state.importBatches.filter((b) => b.id !== id)
+      });
     }
     async clearTransactions() {
-      await db.clear("transactions");
-      await db.clear("importBatches");
+      await api.clearTransactions();
       this.setState({ transactions: [], importBatches: [] });
     }
     // ---------- plan notes (one per cost item per fiscal year) ----------
     async setPlanNote(fiscalYear, projectCode, text) {
       const id = `${fiscalYear}:${projectCode}`;
       const trimmed = (text || "").trim();
+      await api.setPlanNote(fiscalYear, projectCode, trimmed);
       if (!trimmed) {
-        await db.delete("planNotes", id);
         this.setState({ planNotes: this.state.planNotes.filter((n) => n.id !== id) });
         return;
       }
-      const record = { id, fiscalYear, projectCode, text: trimmed, updatedAt: nowIso() };
-      await db.put("planNotes", record);
+      const record = { id, fiscalYear, projectCode, text: trimmed };
       this.setState({ planNotes: [...this.state.planNotes.filter((n) => n.id !== id), record] });
     }
+    // ---------- danger zone (admin) ----------
     async wipeAll() {
-      await db.wipeAll();
+      await api.wipeAll();
       this.setState({ categories: [], projects: [], budgetLines: [], transactions: [], importBatches: [], planNotes: [] });
     }
-    async importWorkbookData(parsed) {
-      var _a, _b;
-      await db.wipeAll();
-      await db.bulkPut("categories", parsed.categories);
-      await db.bulkPut("projects", parsed.projects);
-      await db.bulkPut("budgetLines", parsed.budgetLines);
-      if ((_a = parsed.transactions) == null ? void 0 : _a.length) await db.bulkPut("transactions", parsed.transactions);
-      if ((_b = parsed.planNotes) == null ? void 0 : _b.length) await db.bulkPut("planNotes", parsed.planNotes);
-      this.setState({
-        categories: parsed.categories,
-        projects: parsed.projects,
-        budgetLines: parsed.budgetLines,
-        transactions: parsed.transactions || [],
-        planNotes: parsed.planNotes || []
-      });
+    // ---------- users & access (admin) ----------
+    // Deliberately NOT part of reactive state (this.state / setState): the
+    // user list is only needed by the admin-only "Users & access" tab, and
+    // routing it through setState would fire the app-wide re-render
+    // subscription on every load — which itself reloads the list — an
+    // infinite loop. The view manages its own local copy instead.
+    async loadUsers() {
+      const { users } = await api.adminListUsers();
+      return users;
+    }
+    async createUser(user) {
+      const { user: created } = await api.adminCreateUser(user);
+      return created;
+    }
+    async updateUser(id, patch) {
+      await api.adminUpdateUser(id, patch);
+    }
+    async deleteUser(id) {
+      await api.adminDeleteUser(id);
+    }
+    async setUserAssignments(id, categoryIds) {
+      await api.adminSetAssignments(id, categoryIds);
+    }
+    async changeOwnPassword(oldPassword, newPassword) {
+      return api.changeOwnPassword(oldPassword, newPassword);
     }
   };
   var Store = new StoreImpl();
@@ -548,7 +547,9 @@
     upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
     download: '<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 19h16"/>',
     layers: '<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>',
-    note: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>'
+    note: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+    logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
+    users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
   };
   function icon(name, { size = 18, strokeWidth = 2 } = {}) {
     const body = ICONS[name] || ICONS.chart;
@@ -640,13 +641,6 @@
       } catch (e) {
       }
     }
-  }
-  function debounce(fn, ms) {
-    let t;
-    return (...args) => {
-      clearTimeout(t);
-      t = setTimeout(() => fn(...args), ms);
-    };
   }
   function downloadTextFile(filename, text, mime = "text/csv") {
     const blob = new Blob([text], { type: mime });
@@ -872,7 +866,7 @@
       (_a = root.querySelector("#go-data-btn")) == null ? void 0 : _a.addEventListener("click", () => Store.setRoute("data"));
       return;
     }
-    const rr = computePortfolioRunRate(rows);
+    const rr = computeRunRate(total.byMonth.actual, total.byMonth.encumbrance, total.budget, asOf);
     const pctUsed = total.budget > 0 ? total.committed / total.budget : null;
     const paceExpected = asOf / 12;
     const monthlyActualToDate = total.byMonth.actual.slice(0, asOf);
@@ -896,7 +890,7 @@
       ${kpiCard({ label: "Actual spend (YTD)", value: "$" + fmtMoney(total.actual, { compact: true }), sub: `Through ${MONTH_NAMES[asOf - 1]} \xB7 ${fmtPct(paceExpected)} of year elapsed`, icon: "trend", iconColor: "var(--series-3)", sparkline: monthlyActualToDate.length > 1 ? monthlyActualToDate : null })}
       ${kpiCard({ label: "Encumbered / committed", value: "$" + fmtMoney(total.encumbrance, { compact: true }), sub: "Open POs & obligations", icon: "inbox", iconColor: "var(--series-2)" })}
       ${kpiCard({ label: "Remaining balance", value: "$" + fmtMoney(total.balance, { compact: true }), sub: pctUsed != null ? `${fmtPct(pctUsed)} of budget committed` : "No budget set", icon: "scale", iconColor: "var(--series-6)" })}
-      ${kpiCard({ label: "Projected year-end spend", value: "$" + fmtMoney(rr.projectedAnnual, { compact: true }), sub: rr.hasBudget ? `${rr.projectedVariancePct >= 0 ? "+" : ""}${fmtPct(rr.projectedVariancePct)} vs budget at current run-rate` : "No budget set", deltaText: rr.hasBudget ? STATUS_LABEL[rr.status] : null, deltaGood: rr.status === "good", icon: "chart", iconColor: projectedStatusColor, sparkline: cumCommittedToDate.length > 1 ? cumCommittedToDate : null })}
+      ${kpiCard({ label: "Projected year-end spend", value: "$" + fmtMoney(rr.projectedAnnual, { compact: true }), sub: rr.hasBudget ? rr.overBudgetNow ? `Already $${fmtMoney(rr.overBudgetAmount, { compact: true })} over budget` : `${rr.projectedVariancePct >= 0 ? "+" : ""}${fmtPct(rr.projectedVariancePct)} vs budget at current run-rate` : "No budget set", deltaText: rr.hasBudget ? STATUS_LABEL[rr.status] : null, deltaGood: rr.status === "good", icon: "chart", iconColor: projectedStatusColor, sparkline: cumCommittedToDate.length > 1 ? cumCommittedToDate : null })}
     </div>
 
     <div class="grid two-col">
@@ -951,24 +945,22 @@
       encumbrance: rows.map((r) => r.encumbrance)
     });
   }
-  function computePortfolioRunRate(rows) {
-    let ytdActual = 0, projectedAnnual = 0, budget = 0;
-    for (const r of rows) {
-      ytdActual += r.runRate.ytdActual;
-      projectedAnnual += r.runRate.projectedAnnual;
-      budget += r.budget;
-    }
-    const hasBudget = budget > 0;
-    const projectedVariancePct = hasBudget ? (projectedAnnual - budget) / budget : null;
-    const status = hasBudget ? projectedVariancePct <= 0.02 ? "good" : projectedVariancePct <= 0.1 ? "warning" : projectedVariancePct <= 0.25 ? "serious" : "critical" : "unbudgeted";
-    return { ytdActual, projectedAnnual, hasBudget, projectedVariancePct, status };
-  }
   function watchList(rows) {
     const flat = [];
     for (const cat of rows) {
       for (const p of cat.projects) {
         if (!p.runRate.hasBudget) continue;
-        flat.push({ label: p.name, code: p.code, categoryId: cat.id, pct: p.runRate.projectedVariancePct, status: p.runRate.status, projected: p.runRate.projectedAnnual, budget: p.budget });
+        flat.push({
+          label: p.name,
+          code: p.code,
+          categoryId: cat.id,
+          pct: p.runRate.projectedVariancePct,
+          status: p.runRate.status,
+          projected: p.runRate.projectedAnnual,
+          budget: p.budget,
+          overBudgetNow: p.runRate.overBudgetNow,
+          overBudgetAmount: p.runRate.overBudgetAmount
+        });
       }
     }
     flat.sort((a, b) => b.pct - a.pct);
@@ -979,7 +971,7 @@
     <div class="field-row" style="justify-content:space-between; align-items:center; gap:8px" data-drill="${f.categoryId}::${f.code}" role="button">
       <div style="min-width:0">
         <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.label}</div>
-        <div style="font-size:11.5px;color:var(--text-muted)">Projected $${fmtMoney(f.projected, { compact: true })} vs $${fmtMoney(f.budget, { compact: true })} budget</div>
+        <div style="font-size:11.5px;color:var(--text-muted)">${f.overBudgetNow ? `Already $${fmtMoney(f.overBudgetAmount, { compact: true })} over its $${fmtMoney(f.budget, { compact: true })} budget` : `Projected $${fmtMoney(f.projected, { compact: true })} vs $${fmtMoney(f.budget, { compact: true })} budget`}</div>
       </div>
       ${statusChip(f.status)}
     </div>`).join("")}</div>`;
@@ -1520,14 +1512,20 @@
   var planFy = null;
   var periodMode = "quarter";
   var QUARTERS = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]];
-  var commit = debounce((fy, code, month, amount) => Store.setBudgetAmount(fy, code, month, amount), 350);
+  var commitTimers = /* @__PURE__ */ new Map();
+  function commit(fy, code, month, amount) {
+    const key = `${fy}:${code}:${month}`;
+    clearTimeout(commitTimers.get(key));
+    commitTimers.set(key, setTimeout(() => Store.setBudgetAmount(fy, code, month, amount), 350));
+  }
   function render5(root) {
+    var _a, _b;
     const s = Store.state;
     if (!planFy) planFy = s.fiscalYear;
     if (!s.categories.length) {
-      root.innerHTML = `<div class="view-head"><h1>Planning</h1></div><div class="card empty-state">Load data from <b>Data &amp; Settings</b> first, or add a cost item group below to start from scratch.
-      <div style="margin-top:12px"><button class="btn btn-primary" id="add-cat-empty">Add first cost item group</button></div></div>`;
-      root.querySelector("#add-cat-empty").addEventListener("click", () => addCategoryModal(root));
+      root.innerHTML = `<div class="view-head"><h1>Planning</h1></div><div class="card empty-state">${Store.isAdmin ? `Load data from <b>Data &amp; Settings</b> first, or add a cost item group below to start from scratch.
+      <div style="margin-top:12px"><button class="btn btn-primary" id="add-cat-empty">Add first cost item group</button></div>` : `There's nothing set up yet \u2014 ask an admin to add cost item groups and assign you to one under <b>Data &amp; Settings \u2192 Users &amp; access</b>.`}</div>`;
+      (_a = root.querySelector("#add-cat-empty")) == null ? void 0 : _a.addEventListener("click", () => addCategoryModal(root));
       return;
     }
     const budgetMap = budgetByProject(s.budgetLines, planFy);
@@ -1538,7 +1536,7 @@
     root.innerHTML = `
     <div class="view-head">
       <h1>Planning</h1>
-      <p class="lead">Enter the budget for each cost item by month or by quarter. Changes save automatically to this browser. Use <b>Data &amp; Settings \u2192 Export workbook</b> to share the plan with the rest of the team.</p>
+      <p class="lead">Enter the budget for each cost item by month or by quarter. Everyone sees the full rollup; you can only edit the cost item group(s) assigned to you. Changes save immediately for the whole team \u2014 nothing to export or share.</p>
     </div>
 
     <div class="filter-bar">
@@ -1555,7 +1553,7 @@
       </div>
       <div class="field-row" style="margin-left:auto">
         <button class="btn btn-sm" id="copy-fy">Copy from another year\u2026</button>
-        <button class="btn btn-sm" id="add-cat">+ Cost item group</button>
+        ${Store.isAdmin ? `<button class="btn btn-sm" id="add-cat">+ Cost item group</button>` : ""}
       </div>
     </div>
 
@@ -1589,9 +1587,9 @@
       periodMode = b.getAttribute("data-mode");
       render5(root);
     }));
-    root.querySelector("#add-cat").addEventListener("click", () => addCategoryModal(root));
+    (_b = root.querySelector("#add-cat")) == null ? void 0 : _b.addEventListener("click", () => addCategoryModal(root));
     root.querySelector("#copy-fy").addEventListener("click", () => copyFromYearModal(root, yearList));
-    root.querySelectorAll("input.cell-input").forEach((input) => {
+    root.querySelectorAll("input.cell-input:not([disabled])").forEach((input) => {
       input.addEventListener("input", () => {
         const code = input.dataset.code;
         const periodIndex = Number(input.dataset.period);
@@ -1676,22 +1674,23 @@
     const projects = s.projects.filter((p) => p.categoryId === cat.id);
     const catTotal = projects.reduce((sum, p) => sum + periodColsTotal(budgetMap, p.code), 0);
     const fy = planFy;
+    const canEditCat = Store.canEditCategory(cat.id);
     return `
-    <tr class="category-row" data-category="${cat.id}"><td class="label-cell">${cat.name}</td>
+    <tr class="category-row" data-category="${cat.id}"><td class="label-cell">${cat.name}${canEditCat ? "" : ` <span class="badge-soft">view only</span>`}</td>
       ${periodCols().map((_, i) => `<td class="total-cell" data-period-total="${i}">$${fmtMoney(projects.reduce((s2, p) => s2 + periodValue(budgetMap, p.code, i), 0), { compact: true })}</td>`).join("")}
       <td class="total-cell" data-cat-total-value>$${fmtMoney(catTotal, { compact: true })}</td>
-      <td style="text-align:center"><button class="btn btn-sm" data-add-project="${cat.id}" title="Add cost item">+</button></td>
+      <td style="text-align:center">${canEditCat ? `<button class="btn btn-sm" data-add-project="${cat.id}" title="Add cost item">+</button>` : ""}</td>
     </tr>
     ${projects.map((p) => {
       const hasNote = s.planNotes.some((n) => n.fiscalYear === fy && n.projectCode === p.code && n.text);
       return `
       <tr data-project="${cssEscape(p.code)}" data-category-member="${cat.id}">
         <td class="sub-label-cell">${p.name} <span class="badge-soft">${p.code}</span></td>
-        ${periodCols().map((_, i) => `<td><input class="cell-input" type="number" step="1" min="0" data-code="${p.code}" data-period="${i}" value="${round0(periodValue(budgetMap, p.code, i))}" /></td>`).join("")}
+        ${periodCols().map((_, i) => `<td><input class="cell-input" type="number" step="1" min="0" data-code="${p.code}" data-period="${i}" value="${round0(periodValue(budgetMap, p.code, i))}" ${canEditCat ? "" : "disabled"} /></td>`).join("")}
         <td class="total-cell row-total-value">$${fmtMoney(periodColsTotal(budgetMap, p.code), { compact: true })}</td>
         <td style="text-align:center;white-space:nowrap">
-          <button class="btn btn-sm ${hasNote ? "btn-has-note" : ""}" data-notes="${p.code}" title="${hasNote ? "View/edit note" : "Add note"}">${icon("note", { size: 13, strokeWidth: 2 })}</button>
-          <button class="btn btn-sm btn-danger" data-del-project="${p.code}" title="Remove cost item">\xD7</button>
+          <button class="btn btn-sm ${hasNote ? "btn-has-note" : ""}" data-notes="${p.code}" title="${hasNote ? "View note" : "Add note"}">${icon("note", { size: 13, strokeWidth: 2 })}</button>
+          ${canEditCat ? `<button class="btn btn-sm btn-danger" data-del-project="${p.code}" title="Remove cost item">\xD7</button>` : ""}
         </td>
       </tr>
     `;
@@ -1756,25 +1755,27 @@
   function notesModal(root, code) {
     const proj = Store.state.projects.find((p) => p.code === code);
     const existing = Store.state.planNotes.find((n) => n.fiscalYear === planFy && n.projectCode === code);
+    const canEdit = proj && Store.canEditCategory(proj.categoryId);
     openModal(`
     <h2>Note \u2014 ${proj ? proj.name : code} <span class="badge-soft">FY${planFy}</span></h2>
-    <p class="hint">Context for this cost item's plan \u2014 an assumption, a rationale, a flag for next review. Visible to anyone who opens this workbook.</p>
-    <div class="field" style="margin-top:8px"><textarea id="note-text" rows="5" style="width:100%;resize:vertical;font:inherit" placeholder="e.g. Includes the Q3 campaign refresh; pending sign-off from brand team.">${existing ? escapeHtml3(existing.text) : ""}</textarea></div>
+    <p class="hint">Context for this cost item's plan \u2014 an assumption, a rationale, a flag for next review. Visible to everyone.</p>
+    <div class="field" style="margin-top:8px"><textarea id="note-text" rows="5" style="width:100%;resize:vertical;font:inherit" placeholder="e.g. Includes the Q3 campaign refresh; pending sign-off from brand team." ${canEdit ? "" : "disabled"}>${existing ? escapeHtml3(existing.text) : ""}</textarea></div>
+    ${canEdit ? "" : `<p class="hint">Only the manager for this cost item group can edit this note.</p>`}
     <div class="modal-actions">
-      ${existing ? `<button class="btn btn-danger" id="note-delete" style="margin-right:auto">Delete note</button>` : ""}
-      <button class="btn" data-close>Cancel</button>
-      <button class="btn btn-primary" id="note-save">Save note</button>
+      ${canEdit && existing ? `<button class="btn btn-danger" id="note-delete" style="margin-right:auto">Delete note</button>` : ""}
+      <button class="btn" data-close>${canEdit ? "Cancel" : "Close"}</button>
+      ${canEdit ? `<button class="btn btn-primary" id="note-save">Save note</button>` : ""}
     </div>
   `, {
       onMount: (modal, close) => {
-        var _a;
+        var _a, _b;
         modal.querySelector("[data-close]").addEventListener("click", close);
-        modal.querySelector("#note-save").addEventListener("click", async () => {
+        (_a = modal.querySelector("#note-save")) == null ? void 0 : _a.addEventListener("click", async () => {
           await Store.setPlanNote(planFy, code, modal.querySelector("#note-text").value);
           close();
           render5(root);
         });
-        (_a = modal.querySelector("#note-delete")) == null ? void 0 : _a.addEventListener("click", async () => {
+        (_b = modal.querySelector("#note-delete")) == null ? void 0 : _b.addEventListener("click", async () => {
           await Store.setPlanNote(planFy, code, "");
           close();
           render5(root);
@@ -1806,8 +1807,8 @@
             month: b.month,
             amount: Math.round(b.amount * growth * 100) / 100
           }));
-          await Store.bulkSetBudgetLines(lines);
-          toast(`Copied ${lines.length} line(s) from FY${source}`, "ok");
+          const applied = await Store.bulkSetBudgetLines(lines);
+          toast(`Copied ${applied} line(s) from FY${source}${applied < lines.length ? " (some skipped \u2014 not your cost item group)" : ""}`, "ok");
           close();
           render5(root);
         });
@@ -1876,9 +1877,21 @@
     if (m2) return { year: parseInt(m2[1], 10), month: parseInt(m2[2], 10) };
     return { year: null, month: null };
   }
-  function excelDateToParts(v) {
-    if (v instanceof Date && !isNaN(v)) return { year: v.getFullYear(), month: v.getMonth() + 1, date: v };
-    return { year: null, month: null, date: null };
+  function excelSerialToDate(serial) {
+    const ms = Math.round((serial - 25569) * 86400 * 1e3);
+    const d = new Date(ms);
+    return isNaN(d) ? null : d;
+  }
+  function coerceDateParts(raw) {
+    if (raw instanceof Date && !isNaN(raw)) {
+      return { year: raw.getFullYear(), month: raw.getMonth() + 1, date: raw };
+    }
+    if (typeof raw === "number" && isFinite(raw) && raw > 0) {
+      const d = excelSerialToDate(raw);
+      if (d) return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, date: d };
+    }
+    const { year, month } = parsePeriodLabel(raw);
+    return { year, month, date: null };
   }
   function simpleHash(str) {
     let h = 0;
@@ -1953,10 +1966,10 @@
       const project = accounts[2] || null;
       const ferc = accounts[3] || null;
       if (!project) continue;
-      let { year, month } = excelDateToParts(row[iEnddate]);
+      let { year, month } = coerceDateParts(row[iEnddate]);
       if (!year) ({ year, month } = parsePeriodLabel(row[iPeriod]));
       if (!year) continue;
-      const posted = row[iPosted] instanceof Date ? row[iPosted] : null;
+      const posted = coerceDateParts(row[iPosted]).date;
       const docNo = row[iDocNo] != null ? String(row[iDocNo]) : "";
       const line = row[iLine] != null ? String(row[iLine]) : "";
       const key = simpleHash(["gl", project, ferc, docNo, line, net, year, month].join("|"));
@@ -1994,17 +2007,8 @@
       if (!amount) continue;
       const project = row[iProject] != null ? String(row[iProject]).trim() : "";
       if (!project) continue;
-      let year = null, month = null, dateStr = null;
-      const rawDate = row[iDate];
-      if (rawDate instanceof Date) {
-        year = rawDate.getFullYear();
-        month = rawDate.getMonth() + 1;
-        dateStr = rawDate.toISOString().slice(0, 10);
-      } else {
-        const parsed = parsePeriodLabel(rawDate);
-        year = parsed.year;
-        month = parsed.month;
-      }
+      const { year, month, date: parsedDate } = coerceDateParts(row[iDate]);
+      const dateStr = parsedDate ? parsedDate.toISOString().slice(0, 10) : null;
       if (!year || !month) continue;
       const typeRaw = iType >= 0 ? String(row[iType] || "").toLowerCase() : "";
       const balanceType = typeRaw.startsWith("enc") || typeRaw === "e" ? "E" : "A";
@@ -2104,65 +2108,31 @@
   function downloadWorkbook(wb, filename) {
     window.XLSX.writeFile(wb, filename);
   }
-  function parseBudgetBridgeWorkbook(wb) {
-    const sheetRows = (name) => wb.Sheets[name] ? window.XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: null }) : [];
-    const hasOwnFormat = ["CostItemGroups", "CostItems", "BudgetLines"].every((s) => wb.SheetNames.includes(s));
-    if (!hasOwnFormat) return null;
-    const categories = sheetRows("CostItemGroups").map((r) => ({ id: String(r.id), name: r.name, sortOrder: Number(r.sortOrder) || 0 }));
-    const projects = sheetRows("CostItems").map((r) => ({ code: String(r.code), name: r.name, categoryId: r.costItemGroupId != null ? String(r.costItemGroupId) : null, active: r.active !== 0 }));
-    const budgetLines = sheetRows("BudgetLines").map((r) => ({
-      id: `${r.fiscalYear}:${r.costItemCode}:${r.month}`,
-      fiscalYear: Number(r.fiscalYear),
-      projectCode: String(r.costItemCode),
-      month: Number(r.month),
-      amount: Number(r.amount) || 0
-    }));
-    const planNotes = sheetRows("Notes").filter((r) => r.text).map((r) => ({
-      id: `${r.fiscalYear}:${r.costItemCode}`,
-      fiscalYear: Number(r.fiscalYear),
-      projectCode: String(r.costItemCode),
-      text: String(r.text)
-    }));
-    const metaRows = sheetRows("Meta");
-    const meta = {};
-    for (const r of metaRows) {
-      try {
-        meta[r.key] = JSON.parse(r.value);
-      } catch (e) {
-        meta[r.key] = r.value;
-      }
-    }
-    const transactions = sheetRows("Transactions").map((r) => ({
-      id: String(r.id),
-      project: String(r.costItemCode),
-      ferc: r.ferc != null ? String(r.ferc) : null,
-      year: Number(r.year),
-      month: Number(r.month),
-      balanceType: r.balanceType || "A",
-      docType: r.docType || null,
-      docNo: r.docNo,
-      desc: r.desc,
-      vendor: r.vendor,
-      amount: Number(r.amount) || 0,
-      postedDate: r.postedDate,
-      batchId: r.batchId || "imported-workbook"
-    }));
-    return { categories, projects, budgetLines, meta, transactions, planNotes };
-  }
 
   // js/views/dataSettings.js
-  var tab = "import";
+  var tab = null;
+  var ADMIN_TABS = [
+    { key: "import", label: "Import actuals" },
+    { key: "structure", label: "Cost item groups & cost items" },
+    { key: "access", label: "Users & access" },
+    { key: "backup", label: "Backup" },
+    { key: "account", label: "My account" }
+  ];
+  var MANAGER_TABS = [
+    { key: "structure", label: "My cost items" },
+    { key: "account", label: "My account" }
+  ];
   function render6(root) {
+    const s = Store.state;
+    const tabs = Store.isAdmin ? ADMIN_TABS : MANAGER_TABS;
+    if (!tab || !tabs.some((t) => t.key === tab)) tab = tabs[0].key;
     root.innerHTML = `
     <div class="view-head">
       <h1>Data &amp; Settings</h1>
-      <p class="lead">Bring in your actuals export, manage the cost item / cost item group list, and control how this tool's data is stored and shared.</p>
+      <p class="lead">${Store.isAdmin ? "Bring in your actuals export, manage the cost item / cost item group list, and control who can edit what." : "Manage the cost items in your cost item group(s), and your own account."}</p>
     </div>
     <div class="tabbar">
-      <button data-tab="import" class="${tab === "import" ? "active" : ""}">Import actuals</button>
-      <button data-tab="workbook" class="${tab === "workbook" ? "active" : ""}">Share workbook</button>
-      <button data-tab="structure" class="${tab === "structure" ? "active" : ""}">Cost item groups &amp; cost items</button>
-      <button data-tab="storage" class="${tab === "storage" ? "active" : ""}">Storage &amp; danger zone</button>
+      ${tabs.map((t) => `<button data-tab="${t.key}" class="${tab === t.key ? "active" : ""}">${t.label}</button>`).join("")}
     </div>
     <div id="tab-body"></div>
   `;
@@ -2172,9 +2142,13 @@
     }));
     const body = root.querySelector("#tab-body");
     if (tab === "import") renderImport(body, root);
-    else if (tab === "workbook") renderWorkbook(body, root);
+    else if (tab === "backup") renderBackup(body, root);
     else if (tab === "structure") renderStructure(body, root);
-    else renderStorage(body, root);
+    else if (tab === "access") renderAccess(body, root);
+    else renderAccount(body, root);
+  }
+  function rerender() {
+    render6(document.getElementById("view-root"));
   }
   function renderImport(body) {
     body.innerHTML = `
@@ -2199,11 +2173,8 @@
     wireDropzone(body.querySelector("#dz-template"), body.querySelector("#file-template"), (file) => handleTemplateFile(body, file));
     body.querySelectorAll("[data-remove-batch]").forEach((b) => b.addEventListener("click", async () => {
       if (!confirm("Remove all transactions from this import batch?")) return;
-      const id = b.getAttribute("data-remove-batch");
-      await db.deleteByIndex("transactions", "byBatch", id);
-      await db.delete("importBatches", id);
-      await Store.loadAll();
-      render6(document.getElementById("view-root"));
+      await Store.deleteBatch(b.getAttribute("data-remove-batch"));
+      rerender();
     }));
   }
   function renderBatchTable() {
@@ -2246,13 +2217,6 @@
   async function handleActualsFile(body, file) {
     try {
       const wb = await readAnyWorkbook(file);
-      const bbWorkbook = parseBudgetBridgeWorkbook(wb);
-      if (bbWorkbook) {
-        openModal(`<h2>This looks like a BudgetBridge workbook</h2><p>Use <b>Share workbook \u2192 Import workbook</b> instead so cost item groups, cost items and budget lines come in correctly.</p><div class="modal-actions"><button class="btn btn-primary" data-close>OK</button></div>`, {
-          onMount: (m, close) => m.querySelector("[data-close]").addEventListener("click", close)
-        });
-        return;
-      }
       const found = inspectWorkbookForActuals(wb);
       if (!found) return toast("Couldn't find a data table in that file", "err");
       if (found.autoFormat === "gl-export") {
@@ -2260,7 +2224,7 @@
         if (!rows.length) return toast("No non-zero transaction rows found", "err");
         await Store.importTransactions(rows, { filename: file.name, type: "gl-export" });
         toast(`Imported ${rows.length.toLocaleString()} transaction line(s) from ${file.name}`, "ok");
-        render6(document.getElementById("view-root"));
+        rerender();
       } else {
         openMappingModal(found, file);
       }
@@ -2315,7 +2279,7 @@
           await Store.importTransactions(rows, { filename: file.name, type: "mapped" });
           toast(`Imported ${rows.length.toLocaleString()} transaction line(s)`, "ok");
           close();
-          render6(document.getElementById("view-root"));
+          rerender();
         });
       }
     });
@@ -2339,7 +2303,7 @@
           modal.querySelector("#do-template-import").addEventListener("click", async () => {
             const fy = Number(modal.querySelector("#tmpl-fy").value) || Store.state.fiscalYear;
             const checked = [...modal.querySelectorAll('input[type="checkbox"]:checked')].map((c) => Number(c.value));
-            let catCount = 0, projCount = 0, lineCount = 0;
+            let catCount = 0, projCount = 0;
             const lines = [];
             for (const si of checked) {
               const sheet = sheets[si];
@@ -2358,11 +2322,10 @@
                 });
               }
             }
-            lineCount = lines.length;
             await Store.bulkSetBudgetLines(lines);
             toast(`Imported ${catCount} cost item group${catCount === 1 ? "" : "s"}, ${projCount} cost item${projCount === 1 ? "" : "s"}, FY${fy}`, "ok");
             close();
-            render6(document.getElementById("view-root"));
+            rerender();
           });
         }
       });
@@ -2371,52 +2334,56 @@
       toast("Couldn't read that file: " + err.message, "err");
     }
   }
-  function renderWorkbook(body) {
+  function renderBackup(body) {
     const s = Store.state;
     body.innerHTML = `
-    <div class="grid two-col">
-      <div class="card">
-        <h3>Export workbook</h3>
-        <p class="hint">Creates a single .xlsx with your cost item groups, cost items and budget plan (and, optionally, every transaction). Save it into a shared Google Drive / OneDrive / SharePoint folder so teammates can pick up your latest numbers with <b>Import workbook</b> below.</p>
-        <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="inc-tx" /> Include full transaction detail <span class="hint">(bigger file; needed for others to see drill-down detail)</span></label>
-        <button class="btn btn-primary" id="export-wb">Export workbook (.xlsx)</button>
-      </div>
-      <div class="card">
-        <h3>Import workbook</h3>
-        <p class="hint">Loads a BudgetBridge workbook \u2014 your own export, or a teammate's \u2014 replacing what's in this browser. Use this each time you open the tool to pick up the latest shared version.</p>
-        <div class="dropzone" id="dz-wb">Drop a BudgetBridge workbook here, or click to choose one</div>
-        <input type="file" id="file-wb" accept=".xlsx" style="display:none" />
-      </div>
+    <div class="card" style="margin-bottom:16px">
+      <h3>Download a backup</h3>
+      <p class="hint">This server's shared database (<code>data/budgetbridge.db</code>) is already the one copy everyone works from \u2014 there's nothing to "sync" here. This button is just an offline snapshot: a single .xlsx of the current cost item groups, cost items, budget plan and notes (optionally every transaction), useful for a point-in-time backup, an audit trail, or sharing a read-only copy with someone who doesn't use BudgetBridge.</p>
+      <label style="display:flex;gap:8px;align-items:center;margin:10px 0"><input type="checkbox" id="inc-tx" /> Include full transaction detail <span class="hint">(bigger file)</span></label>
+      <button class="btn btn-primary" id="export-wb">Download backup (.xlsx)</button>
     </div>
-    <div class="card" style="margin-top:16px">
-      <h3>How teams share this</h3>
-      <p class="hint">Everything in BudgetBridge lives only in this browser (no server, no login). For a team, the shared <b>.xlsx</b> on your drive is the source of truth \u2014 one person exports after editing the plan, everyone else imports to view the latest numbers. It's the same model as a shared Excel workbook: simple and works anywhere, but not real-time \u2014 two people editing the plan at the same moment can overwrite each other, so it works best with one budget owner per cycle. See the README for the full explanation and the upgrade path to a live-shared backend if you outgrow this.</p>
+    <div class="card">
+      <h3>Danger zone</h3>
+      <div class="stack">
+        <div>
+          <button class="btn btn-danger" id="clear-tx">Clear transactions only</button>
+          <p class="hint">Removes imported actuals/encumbrances for everyone but keeps cost item groups, cost items and the budget plan.</p>
+        </div>
+        <div>
+          <button class="btn btn-danger" id="wipe-all">Erase everything</button>
+          <p class="hint">Deletes all cost item groups, cost items, budget lines, notes and transactions for the whole team. Cannot be undone \u2014 download a backup first. (People's accounts are not affected.)</p>
+        </div>
+      </div>
     </div>
   `;
     body.querySelector("#export-wb").addEventListener("click", () => {
       const includeTx = body.querySelector("#inc-tx").checked;
       const wb = buildWorkbook({ categories: s.categories, projects: s.projects, budgetLines: s.budgetLines, transactions: s.transactions, planNotes: s.planNotes, meta: { exportedAt: (/* @__PURE__ */ new Date()).toISOString(), fiscalYear: s.fiscalYear } }, includeTx);
-      downloadWorkbook(wb, `budgetbridge-workbook-FY${s.fiscalYear}.xlsx`);
-      toast("Workbook downloaded", "ok");
+      downloadWorkbook(wb, `budgetbridge-backup-FY${s.fiscalYear}.xlsx`);
+      toast("Backup downloaded", "ok");
     });
-    wireDropzone(body.querySelector("#dz-wb"), body.querySelector("#file-wb"), async (file) => {
-      try {
-        const wb = await readAnyWorkbook(file);
-        const parsed = parseBudgetBridgeWorkbook(wb);
-        if (!parsed) return toast("That doesn't look like a BudgetBridge workbook", "err");
-        if (!confirm("This replaces everything currently in this browser with the workbook's contents. Continue?")) return;
-        await Store.importWorkbookData(parsed);
-        toast("Workbook imported", "ok");
-        render6(document.getElementById("view-root"));
-      } catch (err) {
-        console.error(err);
-        toast("Couldn't read that workbook: " + err.message, "err");
-      }
+    body.querySelector("#clear-tx").addEventListener("click", async () => {
+      if (!confirm("Remove all imported transactions for everyone?")) return;
+      await Store.clearTransactions();
+      toast("Transactions cleared", "ok");
+      rerender();
+    });
+    body.querySelector("#wipe-all").addEventListener("click", async () => {
+      if (!confirm("This deletes everything for the whole team. This cannot be undone. Continue?")) return;
+      await Store.wipeAll();
+      toast("All data erased", "ok");
+      rerender();
     });
   }
   function renderStructure(body) {
+    var _a, _b;
     const s = Store.state;
+    const admin = Store.isAdmin;
+    const myCategoryIds = new Set(admin ? s.categories.map((c) => c.id) : s.me.assignedCategoryIds);
+    const visibleCategories = admin ? s.categories : s.categories.filter((c) => myCategoryIds.has(c.id));
     body.innerHTML = `
+    ${admin ? `
     <div class="card" style="margin-bottom:16px">
       <div class="field-row" style="justify-content:space-between">
         <h3 style="margin:0">Cost item groups</h3>
@@ -2430,105 +2397,268 @@
           <td><button class="btn btn-sm btn-danger" data-del-cat="${c.id}">Delete</button></td>
         </tr>`).join("")}</tbody>
       </table></div>
-    </div>
+    </div>` : `
+    <div class="card" style="margin-bottom:16px">
+      <p class="hint">You manage: <b>${[...myCategoryIds].map((id) => {
+      var _a2;
+      return (_a2 = s.categories.find((c) => c.id === id)) == null ? void 0 : _a2.name;
+    }).filter(Boolean).join(", ") || "no cost item groups yet \u2014 ask an admin to assign you one"}</b>. You can add, rename or remove cost items within those groups below. Everyone can see the whole rollup on the Dashboard and Budget vs. Actual \u2014 you just can't edit outside your own group(s).</p>
+    </div>`}
     <div class="card">
-      <h3>Cost items</h3>
+      <div class="field-row" style="justify-content:space-between">
+        <h3 style="margin:0">Cost items</h3>
+        ${!admin && visibleCategories.length ? `<button class="btn btn-sm" id="add-proj-mgr">+ Add cost item</button>` : ""}
+      </div>
       <div class="table-scroll" style="margin-top:10px"><table class="data-table">
         <thead><tr><th>Name</th><th>Code</th><th>Cost item group</th><th></th></tr></thead>
-        <tbody>${s.projects.map((p) => `<tr>
-          <td><input type="text" value="${escapeHtml4(p.name)}" data-rename-proj="${p.code}" /></td>
+        <tbody>${s.projects.map((p) => {
+      var _a2;
+      const canEdit = Store.canEditCategory(p.categoryId);
+      return `<tr>
+          <td><input type="text" value="${escapeHtml4(p.name)}" data-rename-proj="${p.code}" ${canEdit ? "" : 'disabled title="Managed by another user"'} /></td>
           <td class="badge-soft">${p.code}</td>
-          <td><select data-recat="${p.code}">${s.categories.map((c) => `<option value="${c.id}" ${c.id === p.categoryId ? "selected" : ""}>${c.name}</option>`).join("")}</select></td>
-          <td><button class="btn btn-sm btn-danger" data-del-proj="${p.code}">Delete</button></td>
-        </tr>`).join("")}</tbody>
+          <td>${admin ? `<select data-recat="${p.code}">${s.categories.map((c) => `<option value="${c.id}" ${c.id === p.categoryId ? "selected" : ""}>${c.name}</option>`).join("")}</select>` : escapeHtml4(((_a2 = s.categories.find((c) => c.id === p.categoryId)) == null ? void 0 : _a2.name) || "\u2014")}</td>
+          <td>${canEdit ? `<button class="btn btn-sm btn-danger" data-del-proj="${p.code}">Delete</button>` : ""}</td>
+        </tr>`;
+    }).join("")}</tbody>
       </table></div>
     </div>
   `;
-    body.querySelector("#add-cat").addEventListener("click", () => {
-      const name = prompt("Cost item group name?");
-      if (name && name.trim()) Store.upsertCategory({ name: name.trim() }).then(() => render6(document.getElementById("view-root")));
-    });
+    (_a = body.querySelector("#add-cat")) == null ? void 0 : _a.addEventListener("click", () => addCategoryModal2());
+    (_b = body.querySelector("#add-proj-mgr")) == null ? void 0 : _b.addEventListener("click", () => addProjectPrompt(visibleCategories));
     body.querySelectorAll("[data-rename-cat]").forEach((inp) => inp.addEventListener("change", async () => {
-      await Store.upsertCategory({ id: inp.dataset.renameCat, name: inp.value.trim() });
+      await Store.renameCategory(inp.dataset.renameCat, inp.value.trim());
       toast("Saved", "ok");
     }));
     body.querySelectorAll("[data-del-cat]").forEach((b) => b.addEventListener("click", async () => {
       try {
         await Store.deleteCategory(b.dataset.delCat);
-        render6(document.getElementById("view-root"));
+        rerender();
       } catch (e) {
         toast(e.message, "err");
       }
     }));
     body.querySelectorAll("[data-rename-proj]").forEach((inp) => inp.addEventListener("change", async () => {
-      const proj = Store.state.projects.find((p) => p.code === inp.dataset.renameProj);
-      await Store.upsertProject({ ...proj, name: inp.value.trim() });
-      toast("Saved", "ok");
+      try {
+        await Store.updateProject(inp.dataset.renameProj, { name: inp.value.trim() });
+        toast("Saved", "ok");
+      } catch (e) {
+        toast(e.message, "err");
+      }
     }));
     body.querySelectorAll("[data-recat]").forEach((sel) => sel.addEventListener("change", async () => {
-      const proj = Store.state.projects.find((p) => p.code === sel.dataset.recat);
-      await Store.upsertProject({ ...proj, categoryId: sel.value });
-      toast("Saved", "ok");
+      try {
+        await Store.updateProject(sel.dataset.recat, { categoryId: sel.value });
+        toast("Saved", "ok");
+      } catch (e) {
+        toast(e.message, "err");
+      }
     }));
     body.querySelectorAll("[data-del-proj]").forEach((b) => b.addEventListener("click", async () => {
       if (!confirm("Delete this cost item and its budget lines?")) return;
-      await Store.deleteProject(b.dataset.delProj);
-      render6(document.getElementById("view-root"));
+      try {
+        await Store.deleteProject(b.dataset.delProj);
+        rerender();
+      } catch (e) {
+        toast(e.message, "err");
+      }
     }));
   }
-  async function renderStorage(body) {
-    const s = Store.state;
-    const usage = await estimateUsage();
+  function addCategoryModal2() {
+    openModal(`
+    <h2>Add cost item group</h2>
+    <div class="field"><label>Name</label><input type="text" id="new-cat-name" placeholder="e.g. Digital Marketing" /></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-cat">Add cost item group</button></div>
+  `, {
+      onMount: (modal, close) => {
+        modal.querySelector("[data-close]").addEventListener("click", close);
+        modal.querySelector("#save-cat").addEventListener("click", async () => {
+          const name = modal.querySelector("#new-cat-name").value.trim();
+          if (!name) return toast("Enter a name", "err");
+          await Store.upsertCategory({ name });
+          close();
+          rerender();
+        });
+      }
+    });
+  }
+  function addProjectPrompt(categories) {
+    const catOptions = categories.map((c) => `<option value="${c.id}">${escapeHtml4(c.name)}</option>`).join("");
+    openModal(`
+    <h2>Add cost item</h2>
+    <div class="field"><label>Name</label><input type="text" id="new-proj-name" placeholder="e.g. Radio Sponsorships" /></div>
+    <div class="field" style="margin-top:8px"><label>Code (unique)</label><input type="text" id="new-proj-code" placeholder="e.g. RAD-100" /></div>
+    ${categories.length > 1 ? `<div class="field" style="margin-top:8px"><label>Cost item group</label><select id="new-proj-cat">${catOptions}</select></div>` : ""}
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-proj">Add cost item</button></div>
+  `, {
+      onMount: (modal, close) => {
+        modal.querySelector("[data-close]").addEventListener("click", close);
+        modal.querySelector("#save-proj").addEventListener("click", async () => {
+          const name = modal.querySelector("#new-proj-name").value.trim();
+          let code = modal.querySelector("#new-proj-code").value.trim();
+          const categoryId = categories.length > 1 ? modal.querySelector("#new-proj-cat").value : categories[0].id;
+          if (!name) return toast("Enter a name", "err");
+          if (!code) code = slugify(name).toUpperCase();
+          if (Store.state.projects.some((p) => p.code === code)) return toast("That code is already in use", "err");
+          try {
+            await Store.upsertProject({ code, name, categoryId });
+            close();
+            rerender();
+          } catch (e) {
+            toast(e.message, "err");
+          }
+        });
+      }
+    });
+  }
+  async function renderAccess(body) {
+    body.innerHTML = `<p class="hint">Loading\u2026</p>`;
+    const users = await Store.loadUsers();
+    const cats = Store.state.categories;
     body.innerHTML = `
-    <div class="grid two-col">
-      <div class="card">
-        <h3>What's in this browser right now</h3>
-        <table class="data-table" style="margin-top:8px">
-          <tbody>
-            <tr><td>Cost item groups</td><td class="num">${s.categories.length}</td></tr>
-            <tr><td>Cost items</td><td class="num">${s.projects.length}</td></tr>
-            <tr><td>Budget line entries</td><td class="num">${s.budgetLines.length}</td></tr>
-            <tr><td>Transaction lines</td><td class="num">${s.transactions.length.toLocaleString()}</td></tr>
-            ${usage ? `<tr><td>Estimated browser storage used</td><td class="num">${formatBytes(usage.usage || 0)}</td></tr>` : ""}
-          </tbody>
-        </table>
-        <p class="hint" style="margin-top:10px">All of this lives in this browser's local database (IndexedDB) \u2014 it isn't sent anywhere. Clearing your browser's site data for this page, or using a different browser/device, starts empty. Export a workbook regularly if you want a backup outside the browser.</p>
+    <div class="card" style="margin-bottom:16px">
+      <div class="field-row" style="justify-content:space-between">
+        <h3 style="margin:0">People</h3>
+        <button class="btn btn-sm" id="add-user">+ Add person</button>
       </div>
-      <div class="card">
-        <h3>Danger zone</h3>
-        <div class="stack">
-          <div>
-            <button class="btn btn-danger" id="clear-tx">Clear transactions only</button>
-            <p class="hint">Removes imported actuals/encumbrances but keeps your cost item groups, cost items and budget plan.</p>
-          </div>
-          <div>
-            <button class="btn btn-danger" id="wipe-all">Erase everything</button>
-            <p class="hint">Deletes all cost item groups, cost items, budget lines and transactions from this browser. Cannot be undone \u2014 export a workbook first if you want a copy.</p>
-          </div>
-        </div>
-      </div>
+      <p class="hint">An <b>admin</b> can edit anything and manage people. A <b>manager</b> can only edit the cost item group(s) assigned to them below, but can see the full consolidated rollup like everyone else.</p>
+      <div class="table-scroll" style="margin-top:10px"><table class="data-table">
+        <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Manages</th><th>Active</th><th></th></tr></thead>
+        <tbody>${users.map((u) => `<tr>
+          <td>${escapeHtml4(u.name)}</td>
+          <td class="badge-soft">${escapeHtml4(u.username)}</td>
+          <td><select data-role="${u.id}" ${u.id === Store.state.me.id ? `disabled title="You can't change your own role"` : ""}>
+            <option value="manager" ${u.role === "manager" ? "selected" : ""}>Manager</option>
+            <option value="admin" ${u.role === "admin" ? "selected" : ""}>Admin</option>
+          </select></td>
+          <td>${u.role === "admin" ? `<span class="hint">everything</span>` : `<button class="btn btn-sm" data-assign="${u.id}">${u.assignedCategoryIds.length ? `${u.assignedCategoryIds.length} group(s)` : "None \u2014 assign"}</button>`}</td>
+          <td><input type="checkbox" data-active="${u.id}" ${u.active ? "checked" : ""} ${u.id === Store.state.me.id ? "disabled" : ""} /></td>
+          <td><button class="btn btn-sm" data-reset="${u.id}">Reset password</button>${u.id === Store.state.me.id ? "" : ` <button class="btn btn-sm btn-danger" data-del-user="${u.id}">Delete</button>`}</td>
+        </tr>`).join("")}</tbody>
+      </table></div>
     </div>
   `;
-    body.querySelector("#clear-tx").addEventListener("click", async () => {
-      if (!confirm("Remove all imported transactions?")) return;
-      await Store.clearTransactions();
-      toast("Transactions cleared", "ok");
-      render6(document.getElementById("view-root"));
+    body.querySelector("#add-user").addEventListener("click", () => addUserModal());
+    body.querySelectorAll("[data-role]").forEach((sel) => sel.addEventListener("change", async () => {
+      await Store.updateUser(sel.dataset.role, { role: sel.value });
+      toast("Saved", "ok");
+      rerender();
+    }));
+    body.querySelectorAll("[data-active]").forEach((cb) => cb.addEventListener("change", async () => {
+      await Store.updateUser(cb.dataset.active, { active: cb.checked });
+      toast(cb.checked ? "Account re-enabled" : "Account disabled", "ok");
+    }));
+    body.querySelectorAll("[data-assign]").forEach((b) => b.addEventListener("click", () => assignmentsModal(b.dataset.assign, users, cats)));
+    body.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => resetPasswordModal(b.dataset.reset, users)));
+    body.querySelectorAll("[data-del-user]").forEach((b) => b.addEventListener("click", async () => {
+      if (!confirm("Delete this person's account? They will no longer be able to sign in.")) return;
+      await Store.deleteUser(b.dataset.delUser);
+      rerender();
+    }));
+  }
+  function addUserModal() {
+    openModal(`
+    <h2>Add a person</h2>
+    <div class="field"><label>Full name</label><input type="text" id="u-name" placeholder="e.g. Kim Brown" /></div>
+    <div class="field" style="margin-top:8px"><label>Username</label><input type="text" id="u-username" placeholder="e.g. kbrown" /></div>
+    <div class="field" style="margin-top:8px"><label>Temporary password</label><input type="text" id="u-password" placeholder="At least 6 characters" /></div>
+    <div class="field" style="margin-top:8px"><label>Role</label><select id="u-role"><option value="manager">Manager</option><option value="admin">Admin</option></select></div>
+    <p class="hint" style="margin-top:8px">Give this password to them directly \u2014 they can change it themselves under My Account after signing in.</p>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-user">Add person</button></div>
+  `, {
+      onMount: (modal, close) => {
+        modal.querySelector("[data-close]").addEventListener("click", close);
+        modal.querySelector("#save-user").addEventListener("click", async () => {
+          const name = modal.querySelector("#u-name").value.trim();
+          const username = modal.querySelector("#u-username").value.trim();
+          const password = modal.querySelector("#u-password").value;
+          const role = modal.querySelector("#u-role").value;
+          if (!name || !username || !password) return toast("Fill in every field", "err");
+          try {
+            await Store.createUser({ name, username, password, role });
+            close();
+            rerender();
+          } catch (e) {
+            toast(e.message, "err");
+          }
+        });
+      }
     });
-    body.querySelector("#wipe-all").addEventListener("click", async () => {
-      if (!confirm("This deletes everything in this browser. This cannot be undone. Continue?")) return;
-      await Store.wipeAll();
-      toast("All data erased", "ok");
-      render6(document.getElementById("view-root"));
+  }
+  function assignmentsModal(userId, users, categories) {
+    const user = users.find((u) => u.id === userId);
+    openModal(`
+    <h2>Cost item groups for ${escapeHtml4(user.name)}</h2>
+    <p class="hint">${escapeHtml4(user.name)} will be able to edit budget, notes and cost items only in the groups checked below.</p>
+    <div class="stack" style="gap:6px;margin-top:10px">
+      ${categories.map((c) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" value="${c.id}" ${user.assignedCategoryIds.includes(c.id) ? "checked" : ""} /> ${escapeHtml4(c.name)}</label>`).join("") || `<p class="hint">No cost item groups exist yet.</p>`}
+    </div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="save-assign">Save</button></div>
+  `, {
+      onMount: (modal, close) => {
+        modal.querySelector("[data-close]").addEventListener("click", close);
+        modal.querySelector("#save-assign").addEventListener("click", async () => {
+          const categoryIds = [...modal.querySelectorAll('input[type="checkbox"]:checked')].map((c) => c.value);
+          await Store.setUserAssignments(userId, categoryIds);
+          toast("Saved", "ok");
+          close();
+          rerender();
+        });
+      }
+    });
+  }
+  function resetPasswordModal(userId, users) {
+    const user = users.find((u) => u.id === userId);
+    openModal(`
+    <h2>Reset password for ${escapeHtml4(user.name)}</h2>
+    <div class="field"><label>New password</label><input type="text" id="new-pw" placeholder="At least 6 characters" /></div>
+    <div class="modal-actions"><button class="btn" data-close>Cancel</button><button class="btn btn-primary" id="do-reset">Reset</button></div>
+  `, {
+      onMount: (modal, close) => {
+        modal.querySelector("[data-close]").addEventListener("click", close);
+        modal.querySelector("#do-reset").addEventListener("click", async () => {
+          const pw = modal.querySelector("#new-pw").value;
+          if (pw.length < 6) return toast("Password must be at least 6 characters", "err");
+          await Store.updateUser(userId, { password: pw });
+          toast("Password reset", "ok");
+          close();
+        });
+      }
+    });
+  }
+  function renderAccount(body) {
+    const me = Store.state.me;
+    body.innerHTML = `
+    <div class="card" style="max-width:440px">
+      <h3>Signed in as ${escapeHtml4(me.name)}</h3>
+      <p class="hint">Username <span class="badge-soft">${escapeHtml4(me.username)}</span> \xB7 Role <span class="badge-soft">${me.role === "admin" ? "Admin" : "Manager"}</span></p>
+      <hr class="hr" />
+      <h3>Change your password</h3>
+      <div class="field"><label>Current password</label><input type="password" id="old-pw" /></div>
+      <div class="field" style="margin-top:8px"><label>New password</label><input type="password" id="new-pw" placeholder="At least 6 characters" /></div>
+      <button class="btn btn-primary" style="margin-top:12px" id="change-pw">Update password</button>
+      <hr class="hr" />
+      <button class="btn btn-danger" id="do-logout">Log out</button>
+    </div>
+  `;
+    body.querySelector("#change-pw").addEventListener("click", async () => {
+      const oldPassword = body.querySelector("#old-pw").value;
+      const newPassword = body.querySelector("#new-pw").value;
+      try {
+        await Store.changeOwnPassword(oldPassword, newPassword);
+        toast("Password updated", "ok");
+        body.querySelector("#old-pw").value = "";
+        body.querySelector("#new-pw").value = "";
+      } catch (e) {
+        toast(e.message, "err");
+      }
+    });
+    body.querySelector("#do-logout").addEventListener("click", async () => {
+      await Store.logout();
     });
   }
   function escapeHtml4(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  }
-  function formatBytes(n) {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   // js/app.js
@@ -2572,9 +2702,17 @@
     }
     nav.innerHTML = html;
     nav.querySelectorAll("[data-route]").forEach((b) => b.addEventListener("click", () => Store.setRoute(b.getAttribute("data-route"))));
+    const me = Store.state.me;
     document.getElementById("sidebar-footer").innerHTML = `
-    Data stored in this browser only.<br/>See Data &amp; Settings to share.
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <div style="min-width:0">
+        <div style="font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(me == null ? void 0 : me.name) || ""}</div>
+        <div>${(me == null ? void 0 : me.role) === "admin" ? "Admin" : "Manager"} \xB7 everyone's numbers roll up here</div>
+      </div>
+      <button class="btn btn-sm" id="sb-logout" title="Log out">${icon("logout", { size: 14, strokeWidth: 2.2 })}</button>
+    </div>
   `;
+    document.getElementById("sb-logout").addEventListener("click", () => Store.logout());
   }
   function renderTopbar() {
     const s = Store.state;
@@ -2619,12 +2757,55 @@
     destroyAll();
     view.mod.render(document.getElementById("view-root"));
   }
+  function renderLogin() {
+    document.getElementById("app").innerHTML = `
+    <div class="login-wrap">
+      <form class="card login-card" id="login-form">
+        <div class="brand" style="border:none;padding:0 0 16px">
+          <div class="brand-mark">${icon("chart", { size: 20, strokeWidth: 2.4 })}</div>
+          <div class="brand-text"><div class="name">BudgetBridge</div><div class="tag">Marketing budget &amp; planning</div></div>
+        </div>
+        <p class="hint" style="margin-bottom:16px">Sign in with the username and password your admin gave you.</p>
+        <div class="field"><label>Username</label><input type="text" id="login-username" autocomplete="username" autofocus /></div>
+        <div class="field" style="margin-top:10px"><label>Password</label><input type="password" id="login-password" autocomplete="current-password" /></div>
+        <div id="login-error" class="login-error" hidden></div>
+        <button class="btn btn-primary" type="submit" style="margin-top:16px;width:100%;justify-content:center">Sign in</button>
+      </form>
+    </div>
+    <div id="toast-host"></div>
+  `;
+    const form = document.getElementById("login-form");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const username = document.getElementById("login-username").value.trim();
+      const password = document.getElementById("login-password").value;
+      const errorBox = document.getElementById("login-error");
+      errorBox.hidden = true;
+      if (!username || !password) return;
+      const submitBtn = form.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+      try {
+        await Store.login(username, password);
+      } catch (err) {
+        errorBox.textContent = err.message || "Couldn't sign in";
+        errorBox.hidden = false;
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  }
   var booted = false;
   var lastRouteKey = null;
   function fullRender() {
+    if (!Store.state.authed) {
+      booted = false;
+      renderLogin();
+      return;
+    }
     if (!booted) {
       renderShell();
       booted = true;
+      lastRouteKey = null;
     }
     const routeKey = Store.state.route === "drilldown" ? `drilldown:${Store.state.drill.categoryId || ""}:${Store.state.drill.projectCode || ""}` : Store.state.route;
     const sameView = lastRouteKey === routeKey;
@@ -2632,7 +2813,12 @@
     const focusSnap = sameView ? captureFocus() : null;
     renderNav();
     renderTopbar();
-    renderView();
+    try {
+      renderView();
+    } catch (err) {
+      console.error(err);
+      toast("Something went wrong loading that page \u2014 see console for details.", "err");
+    }
     if (sameView) {
       restoreFocus(focusSnap);
       window.scrollTo(0, scrollY);
@@ -2640,10 +2826,8 @@
     lastRouteKey = routeKey;
   }
   async function boot() {
-    renderShell();
-    document.getElementById("view-root").innerHTML = `<div class="empty-state">Loading\u2026</div>`;
-    await Store.loadAll();
-    booted = true;
+    document.getElementById("app").innerHTML = `<div class="boot-loading">Loading\u2026</div>`;
+    await Store.init();
     Store.subscribe(fullRender);
     fullRender();
   }
